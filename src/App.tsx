@@ -337,15 +337,35 @@ function App() {
           try {
             const content = await readTextFile(path);
             const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
-            const tab: DocTab = {
-              id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              title: name,
-              content,
-              savedContent: content,
-              filePath: path,
-            };
-            setTabs((prev) => [...prev, tab]);
-            setActiveTabId(tab.id);
+
+            // If there's a single empty untitled tab, replace it
+            const current = tabsRef.current;
+            const singleEmpty = current.length === 1
+              && !current[0].filePath
+              && current[0].content === DEFAULT_CONTENT;
+
+            if (singleEmpty) {
+              const replaceId = current[0].id;
+              editorManagerRef.current.setContent(replaceId, content);
+              setTabs([{
+                ...current[0],
+                title: name,
+                content,
+                savedContent: content,
+                filePath: path,
+              }]);
+              setActiveTabId(replaceId);
+            } else {
+              const tab: DocTab = {
+                id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                title: name,
+                content,
+                savedContent: content,
+                filePath: path,
+              };
+              setTabs((prev) => [...prev, tab]);
+              setActiveTabId(tab.id);
+            }
           } catch {
             // ignore unreadable files
           }
