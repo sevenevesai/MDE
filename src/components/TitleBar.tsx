@@ -1,25 +1,28 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import MenuBar, { type MenuActions } from "./MenuBar";
 
 const appWindow = getCurrentWindow();
 
 interface TitleBarProps {
   filePath: string | null;
   title: string;
+  menuActions: MenuActions;
 }
 
-export default function TitleBar({ filePath, title }: TitleBarProps) {
+export default function TitleBar({ filePath, title, menuActions }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
       className="flex items-center justify-between h-9 bg-bg-secondary border-b border-border select-none shrink-0"
     >
-      {/* App title + current file */}
-      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 overflow-hidden">
-        <span className="text-xs font-semibold text-text-secondary tracking-wide shrink-0">
+      {/* Left: App name + menus + filename */}
+      <div data-tauri-drag-region className="flex items-center h-full min-w-0">
+        <span className="text-xs font-semibold text-text-secondary tracking-wide pl-3 pr-2 shrink-0">
           MDE
         </span>
-        <span className="text-text-muted text-xs shrink-0">—</span>
-        <span className="text-xs text-text-secondary truncate" title={filePath ?? title}>
+        <MenuBar actions={menuActions} />
+        <span className="text-text-muted text-xs mx-2 shrink-0">—</span>
+        <span className="text-xs text-text-secondary truncate pr-2" title={filePath ?? title}>
           {filePath ?? title}
         </span>
       </div>

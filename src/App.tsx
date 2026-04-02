@@ -324,9 +324,22 @@ function App() {
     []
   );
 
+  const menuActions = {
+    onNew: handleNew,
+    onOpen: handleOpen,
+    onSave: handleSave,
+    onSaveAs: handleSaveAs,
+    onCloseTab: () => handleCloseTab(activeTabIdRef.current),
+    onToggleMode: handleToggleMode,
+    onToggleWrap: handleToggleWrap,
+    onFontSizeUp: handleFontSizeUp,
+    onFontSizeDown: handleFontSizeDown,
+    onFontSizeReset: handleFontSizeReset,
+  };
+
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary">
-      <TitleBar filePath={activeTab.filePath} title={activeTab.title} />
+      <TitleBar filePath={activeTab.filePath} title={activeTab.title} menuActions={menuActions} />
       <TabBar
         tabs={tabs.map((t) => ({ ...t, modified: isModified(t) }))}
         activeTabId={activeTabId}
