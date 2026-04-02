@@ -10,7 +10,10 @@
     "build:web": "tsc && vite build --outDir dist-web",
     "preview": "vite preview",
     "preview:web": "vite preview --outDir dist-web",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
@@ -39,8 +42,11 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "jsdom": "^29.0.1",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.2"
   }
 }

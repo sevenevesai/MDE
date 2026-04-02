@@ -63,6 +63,8 @@ export class EditorManager {
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private settings: EditorSettings = { wordWrap: true, fontSize: 14 };
+  private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastWordCount = 0;
 
   attach(container: HTMLElement) {
     this.container = container;
@@ -149,13 +151,26 @@ export class EditorManager {
           const state = update.state;
           const pos = state.selection.main.head;
           const line = state.doc.lineAt(pos);
-          const text = state.doc.toString();
-          const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+
+          // Cursor position is instant; word count is debounced
           this.onCursorRef.current?.({
             line: line.number,
             column: pos - line.from + 1,
-            wordCount: words,
+            wordCount: this.lastWordCount,
           });
+
+          if (update.docChanged) {
+            if (this.wordCountTimer) clearTimeout(this.wordCountTimer);
+            this.wordCountTimer = setTimeout(() => {
+              const text = update.state.doc.toString();
+              this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+              this.onCursorRef.current?.({
+                line: line.number,
+                column: pos - line.from + 1,
+                wordCount: this.lastWordCount,
+              });
+            }, 250);
+          }
         }
       }),
       EditorView.theme({
@@ -210,11 +225,11 @@ export class EditorManager {
       const pos = state.selection.main.head;
       const line = state.doc.lineAt(pos);
       const text = state.doc.toString();
-      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
       this.onCursorRef.current?.({
         line: line.number,
         column: pos - line.from + 1,
-        wordCount: words,
+        wordCount: this.lastWordCount,
       });
       view.focus();
     }

@@ -1,4 +1,5 @@
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
+import { replaceAll } from "@milkdown/utils";
 import type { CursorInfo } from "./EditorManager";
 
 type ChangeCallback = (tabId: string, doc: string) => void;
@@ -18,7 +19,7 @@ export class MilkdownManager {
   private activeId: string | null = null;
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
-  private creating = new Set<string>();
+  private creating = new Map<string, Promise<Crepe>>();
 
   attach(container: HTMLElement) {
     this.container = container;
@@ -59,50 +60,48 @@ export class MilkdownManager {
     return wrapper;
   }
 
-  private async createEditor(tabId: string, wrapper: HTMLElement, doc: string): Promise<Crepe> {
-    if (this.creating.has(tabId)) {
-      // Wait for the in-progress creation to finish
-      while (this.creating.has(tabId)) {
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      const existing = this.editors.get(tabId);
-      if (existing) return existing;
-    }
+  private createEditor(tabId: string, wrapper: HTMLElement, doc: string): Promise<Crepe> {
+    // If already creating this tab's editor, return the existing promise
+    const inFlight = this.creating.get(tabId);
+    if (inFlight) return inFlight;
 
-    this.creating.add(tabId);
-
-    try {
-      const crepe = new Crepe({
-        root: wrapper,
-        defaultValue: doc,
-        features: {
-          [CrepeFeature.Toolbar]: true,
-          [CrepeFeature.LinkTooltip]: true,
-          [CrepeFeature.ListItem]: true,
-          [CrepeFeature.Placeholder]: true,
-          [CrepeFeature.BlockEdit]: true,
-          [CrepeFeature.ImageBlock]: true,
-          [CrepeFeature.Table]: true,
-          [CrepeFeature.CodeMirror]: true,
-          [CrepeFeature.Cursor]: true,
-          [CrepeFeature.Latex]: false,
-        },
-      });
-
-      crepe.on((listener) => {
-        listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
-          if (markdown !== prevMarkdown) {
-            this.onChangeRef.current?.(tabId, markdown);
-          }
-        });
-      });
-
-      await crepe.create();
-      this.editors.set(tabId, crepe);
-      return crepe;
-    } finally {
+    const promise = this.buildEditor(tabId, wrapper, doc).finally(() => {
       this.creating.delete(tabId);
-    }
+    });
+
+    this.creating.set(tabId, promise);
+    return promise;
+  }
+
+  private async buildEditor(tabId: string, wrapper: HTMLElement, doc: string): Promise<Crepe> {
+    const crepe = new Crepe({
+      root: wrapper,
+      defaultValue: doc,
+      features: {
+        [CrepeFeature.Toolbar]: true,
+        [CrepeFeature.LinkTooltip]: true,
+        [CrepeFeature.ListItem]: true,
+        [CrepeFeature.Placeholder]: true,
+        [CrepeFeature.BlockEdit]: true,
+        [CrepeFeature.ImageBlock]: true,
+        [CrepeFeature.Table]: true,
+        [CrepeFeature.CodeMirror]: true,
+        [CrepeFeature.Cursor]: true,
+        [CrepeFeature.Latex]: false,
+      },
+    });
+
+    crepe.on((listener) => {
+      listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
+        if (markdown !== prevMarkdown) {
+          this.onChangeRef.current?.(tabId, markdown);
+        }
+      });
+    });
+
+    await crepe.create();
+    this.editors.set(tabId, crepe);
+    return crepe;
   }
 
   /**
@@ -136,28 +135,29 @@ export class MilkdownManager {
     }
   }
 
-  /** Replace content for a tab — destroys and recreates the editor */
+  /** Replace content for a tab in-place, falling back to recreate if needed */
   async setContent(tabId: string, markdown: string) {
     const existing = this.editors.get(tabId);
+
+    if (existing) {
+      try {
+        existing.editor.action(replaceAll(markdown));
+        return;
+      } catch {
+        // replaceAll failed — fall back to destroy/recreate
+      }
+    }
+
     const wrapper = this.wrappers.get(tabId);
     if (!wrapper) return;
 
-    // Destroy existing editor if any
     if (existing) {
-      try {
-        await existing.destroy();
-      } catch {
-        // ignore
-      }
+      try { await existing.destroy(); } catch { /* ignore */ }
       this.editors.delete(tabId);
-      // Clear the wrapper's children
       wrapper.innerHTML = "";
     }
 
-    // Make visible before creating
     wrapper.style.display = this.activeId === tabId ? "block" : "none";
-
-    // Recreate with new content
     await this.createEditor(tabId, wrapper, markdown);
   }
 

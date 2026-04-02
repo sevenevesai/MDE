@@ -9,54 +9,25 @@ import { MilkdownManager } from "./editor/MilkdownManager";
 import { openFile, saveFile, saveFileAs, basename, confirmUnsaved } from "./fileOps.platform";
 import { isTauri } from "./platform";
 import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSettings } from "./settings";
-
-export interface DocTab {
-  id: string;
-  title: string;
-  content: string;
-  savedContent: string;
-  filePath: string | null;
-}
-
-const DEFAULT_CONTENT = "";
-
-let tabCounter = 1;
-
-function createNewTab(): DocTab {
-  const id = `untitled-${Date.now()}-${tabCounter}`;
-  const title = `Untitled-${tabCounter}.md`;
-  tabCounter++;
-  return { id, title, content: DEFAULT_CONTENT, savedContent: DEFAULT_CONTENT, filePath: null };
-}
-
-function isModified(tab: DocTab): boolean {
-  return tab.content !== tab.savedContent;
-}
+import { useToast, ToastContainer } from "./components/Toast";
+import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
+import { handleShortcuts, type Shortcut } from "./shortcuts";
 
 function App() {
-  const [tabs, setTabs] = useState<DocTab[]>(() => [createNewTab()]);
-  const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
+  const { state, dispatch, getState, activeTab } = useDocumentStore();
+  const { tabs, activeTabId } = state;
+
   const [mode, setMode] = useState<EditorMode>("raw");
   const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0 });
   const [settings, setSettings] = useState<EditorSettings>(loadSettings);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const editorManagerRef = useRef(new EditorManager());
   const milkdownManagerRef = useRef(new MilkdownManager());
 
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
-  const activeTabIdRef = useRef(activeTabId);
-  activeTabIdRef.current = activeTabId;
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-
   const handleContentChange = useCallback((tabId: string, value: string) => {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === tabId ? { ...t, content: value } : t))
-    );
-  }, []);
+    dispatch({ type: "UPDATE_CONTENT", tabId, content: value });
+  }, [dispatch]);
 
   const handleToggleMode = useCallback(() => {
     setMode((prev) => (prev === "raw" ? "visual" : "raw"));
@@ -89,7 +60,6 @@ function App() {
     updateSettings({ fontSize: 14 });
   }, [updateSettings]);
 
-  // Apply settings to EditorManager on mount
   useEffect(() => {
     editorManagerRef.current.setSettings(settings);
     editorManagerRef.current.updateSettings(settings);
@@ -98,79 +68,90 @@ function App() {
   // --- File Operations ---
 
   const handleNew = useCallback(() => {
-    const tab = createNewTab();
-    setTabs((prev) => [...prev, tab]);
-    setActiveTabId(tab.id);
-  }, []);
+    dispatch({ type: "ADD_TAB", tab: createNewTab() });
+  }, [dispatch]);
 
   const handleOpen = useCallback(async () => {
-    const result = await openFile();
-    if (!result) return;
+    try {
+      const result = await openFile();
+      if (!result) return;
 
-    const existing = tabsRef.current.find((t) => t.filePath === result.path);
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
+      const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+
+      const existing = currentTabs.find((t) => t.filePath === result.path);
+      if (existing) {
+        dispatch({ type: "SET_ACTIVE", id: existing.id });
+        return;
+      }
+
+      const current = currentTabs.find((t) => t.id === currentActiveId);
+      if (current && !current.filePath && !isModified(current) && current.content === DEFAULT_CONTENT) {
+        editorManagerRef.current.setContent(current.id, result.content);
+        dispatch({
+          type: "OPEN_FILE_INTO_CURRENT",
+          tabId: current.id,
+          name: result.name,
+          content: result.content,
+          path: result.path,
+        });
+        return;
+      }
+
+      const tab: DocTab = {
+        id: `file-${Date.now()}`,
+        title: result.name,
+        content: result.content,
+        savedContent: result.content,
+        filePath: result.path,
+      };
+      dispatch({ type: "ADD_TAB", tab });
+    } catch (err) {
+      showToast(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-
-    const current = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
-    if (current && !current.filePath && !isModified(current) && current.content === DEFAULT_CONTENT) {
-      editorManagerRef.current.setContent(current.id, result.content);
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === current.id
-            ? { ...t, title: result.name, content: result.content, savedContent: result.content, filePath: result.path }
-            : t
-        )
-      );
-      return;
-    }
-
-    const tab: DocTab = {
-      id: `file-${Date.now()}`,
-      title: result.name,
-      content: result.content,
-      savedContent: result.content,
-      filePath: result.path,
-    };
-    setTabs((prev) => [...prev, tab]);
-    setActiveTabId(tab.id);
-  }, []);
+  }, [dispatch, getState, showToast]);
 
   const handleSave = useCallback(async () => {
-    const current = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+    const current = currentTabs.find((t) => t.id === currentActiveId);
     if (!current) return;
 
-    if (current.filePath) {
-      const ok = await saveFile(current.filePath, current.content);
-      if (ok) {
-        setTabs((prev) =>
-          prev.map((t) => (t.id === current.id ? { ...t, savedContent: t.content } : t))
-        );
+    try {
+      if (current.filePath) {
+        const ok = await saveFile(current.filePath, current.content);
+        if (ok) {
+          dispatch({ type: "MARK_SAVED", tabId: current.id });
+        } else {
+          showToast(`Failed to save "${current.title}"`, "error");
+        }
+      } else {
+        await handleSaveAs();
       }
-    } else {
-      await handleSaveAs();
+    } catch (err) {
+      showToast(`Failed to save: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, []);
+  }, [dispatch, getState, showToast]);
 
   const handleSaveAs = useCallback(async () => {
-    const current = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+    const current = currentTabs.find((t) => t.id === currentActiveId);
     if (!current) return;
 
-    const path = await saveFileAs(current.content, current.title);
-    if (path) {
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === current.id
-            ? { ...t, filePath: path, title: basename(path), savedContent: t.content }
-            : t
-        )
-      );
+    try {
+      const path = await saveFileAs(current.content, current.title);
+      if (path) {
+        dispatch({
+          type: "REPLACE_TAB",
+          tabId: current.id,
+          patch: { filePath: path, title: basename(path), savedContent: current.content },
+        });
+      }
+    } catch (err) {
+      showToast(`Failed to save: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, []);
+  }, [dispatch, getState, showToast]);
 
   const handleCloseTab = useCallback(async (id: string) => {
-    const currentTabs = tabsRef.current;
+    const { tabs: currentTabs } = getState();
     const target = currentTabs.find((t) => t.id === id);
 
     if (target && isModified(target)) {
@@ -187,32 +168,18 @@ function App() {
 
     editorManagerRef.current.removeEditor(id);
     milkdownManagerRef.current.removeEditor(id);
-
-    if (currentTabs.length <= 1) {
-      const tab = createNewTab();
-      setTabs([tab]);
-      setActiveTabId(tab.id);
-      return;
-    }
-
-    const idx = currentTabs.findIndex((t) => t.id === id);
-    const next = currentTabs.filter((t) => t.id !== id);
-    setTabs(next);
-    if (activeTabIdRef.current === id) {
-      setActiveTabId(next[Math.min(idx, next.length - 1)].id);
-    }
-  }, []);
+    dispatch({ type: "REMOVE_TAB", id });
+  }, [dispatch, getState]);
 
   // --- Window close handler ---
 
   useEffect(() => {
     if (isTauri) {
-      // Tauri: intercept window close to check for unsaved changes
       let unlisten: (() => void) | null = null;
       import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
         const appWindow = getCurrentWindow();
         appWindow.onCloseRequested(async (event) => {
-          const unsavedTabs = tabsRef.current.filter(isModified);
+          const unsavedTabs = getState().tabs.filter(isModified);
           if (unsavedTabs.length === 0) return;
 
           event.preventDefault();
@@ -234,17 +201,15 @@ function App() {
       });
       return () => { unlisten?.(); };
     } else {
-      // Browser: use beforeunload
       const handler = (e: BeforeUnloadEvent) => {
-        const hasUnsaved = tabsRef.current.some(isModified);
-        if (hasUnsaved) {
+        if (getState().tabs.some(isModified)) {
           e.preventDefault();
         }
       };
       window.addEventListener("beforeunload", handler);
       return () => window.removeEventListener("beforeunload", handler);
     }
-  }, []);
+  }, [getState]);
 
   // --- Drag-and-drop file open ---
 
@@ -261,9 +226,9 @@ function App() {
             for (const path of event.payload.paths) {
               if (!path.match(/\.(md|markdown|mdx|txt|text)$/i)) continue;
 
-              const existing = tabsRef.current.find((t) => t.filePath === path);
+              const existing = getState().tabs.find((t) => t.filePath === path);
               if (existing) {
-                setActiveTabId(existing.id);
+                dispatch({ type: "SET_ACTIVE", id: existing.id });
                 continue;
               }
 
@@ -277,8 +242,7 @@ function App() {
                   savedContent: content,
                   filePath: path,
                 };
-                setTabs((prev) => [...prev, tab]);
-                setActiveTabId(tab.id);
+                dispatch({ type: "ADD_TAB", tab });
               } catch {
                 // ignore unreadable files
               }
@@ -288,7 +252,6 @@ function App() {
       });
       return () => { unlisten?.(); };
     } else {
-      // Browser: handle native file drop on the window
       const handleDragOver = (e: DragEvent) => { e.preventDefault(); };
       const handleDrop = async (e: DragEvent) => {
         e.preventDefault();
@@ -304,8 +267,7 @@ function App() {
             savedContent: content,
             filePath: file.name,
           };
-          setTabs((prev) => [...prev, tab]);
-          setActiveTabId(tab.id);
+          dispatch({ type: "ADD_TAB", tab });
         }
       };
       window.addEventListener("dragover", handleDragOver);
@@ -315,7 +277,7 @@ function App() {
         window.removeEventListener("drop", handleDrop);
       };
     }
-  }, []);
+  }, [dispatch, getState]);
 
   // --- Open files from OS (double-click, second instance, file association) ---
 
@@ -324,13 +286,14 @@ function App() {
 
     let unlisten: (() => void) | null = null;
 
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<string[]>("open-files", async (event) => {
+    import("@tauri-apps/api/event").then(async ({ listen, emit }) => {
+      unlisten = await listen<string[]>("open-files", async (event) => {
         const { readTextFile } = await import("@tauri-apps/plugin-fs");
         for (const path of event.payload) {
-          const existing = tabsRef.current.find((t) => t.filePath === path);
+          const { tabs: currentTabs } = getState();
+          const existing = currentTabs.find((t) => t.filePath === path);
           if (existing) {
-            setActiveTabId(existing.id);
+            dispatch({ type: "SET_ACTIVE", id: existing.id });
             continue;
           }
 
@@ -338,23 +301,18 @@ function App() {
             const content = await readTextFile(path);
             const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
 
-            // If there's a single empty untitled tab, replace it
-            const current = tabsRef.current;
-            const singleEmpty = current.length === 1
-              && !current[0].filePath
-              && current[0].content === DEFAULT_CONTENT;
+            const singleEmpty = currentTabs.length === 1
+              && !currentTabs[0].filePath
+              && currentTabs[0].content === DEFAULT_CONTENT;
 
             if (singleEmpty) {
-              const replaceId = current[0].id;
+              const replaceId = currentTabs[0].id;
               editorManagerRef.current.setContent(replaceId, content);
-              setTabs([{
-                ...current[0],
-                title: name,
-                content,
-                savedContent: content,
-                filePath: path,
-              }]);
-              setActiveTabId(replaceId);
+              dispatch({
+                type: "SET_TABS",
+                tabs: [{ ...currentTabs[0], title: name, content, savedContent: content, filePath: path }],
+              });
+              dispatch({ type: "SET_ACTIVE", id: replaceId });
             } else {
               const tab: DocTab = {
                 id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -363,62 +321,43 @@ function App() {
                 savedContent: content,
                 filePath: path,
               };
-              setTabs((prev) => [...prev, tab]);
-              setActiveTabId(tab.id);
+              dispatch({ type: "ADD_TAB", tab });
             }
           } catch {
             // ignore unreadable files
           }
         }
-      }).then((fn) => { unlisten = fn; });
+      });
+
+      await emit("frontend-ready");
     });
 
     return () => { unlisten?.(); };
-  }, []);
+  }, [dispatch, getState]);
 
-  // --- Keyboard Shortcuts ---
+  // --- Keyboard Shortcuts (data-driven registry) ---
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
+    const shortcuts: Shortcut[] = [
+      { key: "n", ctrl: true, action: handleNew },
+      { key: "o", ctrl: true, action: handleOpen },
+      { key: "S", ctrl: true, shift: true, action: handleSaveAs },
+      { key: "s", ctrl: true, action: handleSave },
+      { key: "w", ctrl: true, action: () => handleCloseTab(getState().activeTabId) },
+      { key: "e", ctrl: true, action: handleToggleMode },
+      { key: "w", ctrl: true, alt: true, action: handleToggleWrap },
+      { key: "W", ctrl: true, alt: true, action: handleToggleWrap },
+      { key: "=", ctrl: true, action: handleFontSizeUp },
+      { key: "+", ctrl: true, action: handleFontSizeUp },
+      { key: "-", ctrl: true, action: handleFontSizeDown },
+      { key: "0", ctrl: true, action: handleFontSizeReset },
+    ];
 
-      if (ctrl && e.key === "n") {
-        e.preventDefault();
-        handleNew();
-      } else if (ctrl && e.key === "o") {
-        e.preventDefault();
-        handleOpen();
-      } else if (ctrl && e.shiftKey && e.key === "S") {
-        e.preventDefault();
-        handleSaveAs();
-      } else if (ctrl && e.key === "s") {
-        e.preventDefault();
-        handleSave();
-      } else if (ctrl && e.key === "w") {
-        e.preventDefault();
-        handleCloseTab(activeTabIdRef.current);
-      } else if (ctrl && e.key === "e") {
-        e.preventDefault();
-        handleToggleMode();
-      } else if (ctrl && e.altKey && (e.key === "w" || e.key === "W")) {
-        e.preventDefault();
-        handleToggleWrap();
-      } else if (ctrl && (e.key === "=" || e.key === "+")) {
-        e.preventDefault();
-        handleFontSizeUp();
-      } else if (ctrl && e.key === "-") {
-        e.preventDefault();
-        handleFontSizeDown();
-      } else if (ctrl && e.key === "0") {
-        e.preventDefault();
-        handleFontSizeReset();
-      }
-    };
-
+    const handler = (e: KeyboardEvent) => handleShortcuts(shortcuts, e);
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleNew, handleOpen, handleSave, handleSaveAs, handleCloseTab, handleToggleMode,
-      handleToggleWrap, handleFontSizeUp, handleFontSizeDown, handleFontSizeReset]);
+      handleToggleWrap, handleFontSizeUp, handleFontSizeDown, handleFontSizeReset, getState]);
 
   const getActiveView = useCallback(
     () => editorManagerRef.current.getActiveView(),
@@ -430,7 +369,7 @@ function App() {
     onOpen: handleOpen,
     onSave: handleSave,
     onSaveAs: handleSaveAs,
-    onCloseTab: () => handleCloseTab(activeTabIdRef.current),
+    onCloseTab: () => handleCloseTab(getState().activeTabId),
     onToggleMode: handleToggleMode,
     onToggleWrap: handleToggleWrap,
     onFontSizeUp: handleFontSizeUp,
@@ -444,7 +383,7 @@ function App() {
       <TabBar
         tabs={tabs.map((t) => ({ ...t, modified: isModified(t) }))}
         activeTabId={activeTabId}
-        onSelectTab={setActiveTabId}
+        onSelectTab={(id) => dispatch({ type: "SET_ACTIVE", id })}
         onCloseTab={handleCloseTab}
       />
       {mode === "raw" && <Toolbar getView={getActiveView} />}
@@ -467,6 +406,7 @@ function App() {
         onToggleWrap={handleToggleWrap}
         fontSize={settings.fontSize}
       />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

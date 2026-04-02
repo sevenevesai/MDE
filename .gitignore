@@ -11,6 +11,7 @@ src-tauri/target/
 .claude/
 .state/
 CLAUDE.md
+ROADMAP.md
 
 # Environment / secrets
 .env

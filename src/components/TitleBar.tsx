@@ -7,17 +7,21 @@ interface TitleBarProps {
   menuActions: MenuActions;
 }
 
-export default function TitleBar({ filePath, title, menuActions }: TitleBarProps) {
-  const handleMinimize = () => {
-    if (isTauri) import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().minimize());
-  };
-  const handleMaximize = () => {
-    if (isTauri) import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().toggleMaximize());
-  };
-  const handleClose = () => {
-    if (isTauri) import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().close());
-  };
+// Cache the Tauri window API so we don't re-import on every button click
+let windowApi: { minimize: () => void; toggleMaximize: () => void; close: () => void } | null = null;
 
+if (isTauri) {
+  import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+    const w = getCurrentWindow();
+    windowApi = {
+      minimize: () => w.minimize(),
+      toggleMaximize: () => w.toggleMaximize(),
+      close: () => w.close(),
+    };
+  });
+}
+
+export default function TitleBar({ filePath, title, menuActions }: TitleBarProps) {
   return (
     <div
       {...(isTauri ? { "data-tauri-drag-region": true } : {})}
@@ -32,7 +36,7 @@ export default function TitleBar({ filePath, title, menuActions }: TitleBarProps
           MDE
         </span>
         <MenuBar actions={menuActions} />
-        <span className="text-text-muted text-xs mx-2 shrink-0">—</span>
+        <span className="text-text-muted text-xs mx-2 shrink-0">&mdash;</span>
         <span className="text-xs text-text-secondary truncate pr-2" title={filePath ?? title}>
           {filePath ?? title}
         </span>
@@ -42,7 +46,7 @@ export default function TitleBar({ filePath, title, menuActions }: TitleBarProps
       {isTauri && (
         <div className="flex h-full shrink-0">
           <button
-            onClick={handleMinimize}
+            onClick={() => windowApi?.minimize()}
             className="h-full w-11 flex items-center justify-center text-text-secondary hover:bg-bg-hover transition-colors"
           >
             <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor">
@@ -50,7 +54,7 @@ export default function TitleBar({ filePath, title, menuActions }: TitleBarProps
             </svg>
           </button>
           <button
-            onClick={handleMaximize}
+            onClick={() => windowApi?.toggleMaximize()}
             className="h-full w-11 flex items-center justify-center text-text-secondary hover:bg-bg-hover transition-colors"
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
@@ -58,7 +62,7 @@ export default function TitleBar({ filePath, title, menuActions }: TitleBarProps
             </svg>
           </button>
           <button
-            onClick={handleClose}
+            onClick={() => windowApi?.close()}
             className="h-full w-11 flex items-center justify-center text-text-secondary hover:bg-[#c42b1c] hover:text-white transition-colors"
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2">
