@@ -20,6 +20,12 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: T
           <div
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
+            onMouseDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                onCloseTab(tab.id);
+              }
+            }}
             className={`group flex items-center gap-2 h-full px-4 cursor-pointer border-r border-border text-sm transition-colors ${
               isActive
                 ? "bg-bg-secondary text-text-primary border-t-2 border-t-accent"

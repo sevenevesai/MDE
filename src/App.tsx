@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar";
 import TabBar from "./components/TabBar";
 import EditorArea, { type EditorMode } from "./components/EditorArea";
@@ -7,8 +6,8 @@ import Toolbar from "./components/Toolbar";
 import StatusBar from "./components/StatusBar";
 import { EditorManager, type CursorInfo } from "./editor/EditorManager";
 import { MilkdownManager } from "./editor/MilkdownManager";
-import { openFile, saveFile, saveFileAs, basename, confirmUnsaved } from "./fileOps";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { openFile, saveFile, saveFileAs, basename, confirmUnsaved } from "./fileOps.platform";
+import { isTauri } from "./platform";
 import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSettings } from "./settings";
 
 export interface DocTab {
@@ -207,44 +206,128 @@ function App() {
   // --- Window close handler ---
 
   useEffect(() => {
-    const appWindow = getCurrentWindow();
-    const unlisten = appWindow.onCloseRequested(async (event) => {
-      const unsavedTabs = tabsRef.current.filter(isModified);
-      if (unsavedTabs.length === 0) return;
+    if (isTauri) {
+      // Tauri: intercept window close to check for unsaved changes
+      let unlisten: (() => void) | null = null;
+      import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        appWindow.onCloseRequested(async (event) => {
+          const unsavedTabs = tabsRef.current.filter(isModified);
+          if (unsavedTabs.length === 0) return;
 
-      event.preventDefault();
+          event.preventDefault();
 
-      for (const tab of unsavedTabs) {
-        const action = await confirmUnsaved(tab.title);
-        if (action === "save") {
-          if (tab.filePath) {
-            await saveFile(tab.filePath, tab.content);
-          } else {
-            const path = await saveFileAs(tab.content, tab.title);
-            if (!path) return;
+          for (const tab of unsavedTabs) {
+            const action = await confirmUnsaved(tab.title);
+            if (action === "save") {
+              if (tab.filePath) {
+                await saveFile(tab.filePath, tab.content);
+              } else {
+                const path = await saveFileAs(tab.content, tab.title);
+                if (!path) return;
+              }
+            }
           }
+
+          await appWindow.destroy();
+        }).then((fn) => { unlisten = fn; });
+      });
+      return () => { unlisten?.(); };
+    } else {
+      // Browser: use beforeunload
+      const handler = (e: BeforeUnloadEvent) => {
+        const hasUnsaved = tabsRef.current.some(isModified);
+        if (hasUnsaved) {
+          e.preventDefault();
         }
-      }
-
-      await appWindow.destroy();
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+      };
+      window.addEventListener("beforeunload", handler);
+      return () => window.removeEventListener("beforeunload", handler);
+    }
   }, []);
 
   // --- Drag-and-drop file open ---
 
   useEffect(() => {
-    const appWindow = getCurrentWindow();
-    const unlisten = appWindow.onDragDropEvent(async (event) => {
-      if (event.payload.type === "drop") {
-        const paths = event.payload.paths;
-        for (const path of paths) {
-          // Only open text/markdown-like files
-          if (!path.match(/\.(md|markdown|mdx|txt|text)$/i)) continue;
+    if (isTauri) {
+      let unlisten: (() => void) | null = null;
+      Promise.all([
+        import("@tauri-apps/api/window"),
+        import("@tauri-apps/plugin-fs"),
+      ]).then(([{ getCurrentWindow }, { readTextFile }]) => {
+        const appWindow = getCurrentWindow();
+        appWindow.onDragDropEvent(async (event) => {
+          if (event.payload.type === "drop") {
+            for (const path of event.payload.paths) {
+              if (!path.match(/\.(md|markdown|mdx|txt|text)$/i)) continue;
 
+              const existing = tabsRef.current.find((t) => t.filePath === path);
+              if (existing) {
+                setActiveTabId(existing.id);
+                continue;
+              }
+
+              try {
+                const content = await readTextFile(path);
+                const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
+                const tab: DocTab = {
+                  id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  title: name,
+                  content,
+                  savedContent: content,
+                  filePath: path,
+                };
+                setTabs((prev) => [...prev, tab]);
+                setActiveTabId(tab.id);
+              } catch {
+                // ignore unreadable files
+              }
+            }
+          }
+        }).then((fn) => { unlisten = fn; });
+      });
+      return () => { unlisten?.(); };
+    } else {
+      // Browser: handle native file drop on the window
+      const handleDragOver = (e: DragEvent) => { e.preventDefault(); };
+      const handleDrop = async (e: DragEvent) => {
+        e.preventDefault();
+        const files = e.dataTransfer?.files;
+        if (!files) return;
+        for (const file of Array.from(files)) {
+          if (!file.name.match(/\.(md|markdown|mdx|txt|text)$/i)) continue;
+          const content = await file.text();
+          const tab: DocTab = {
+            id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            title: file.name,
+            content,
+            savedContent: content,
+            filePath: file.name,
+          };
+          setTabs((prev) => [...prev, tab]);
+          setActiveTabId(tab.id);
+        }
+      };
+      window.addEventListener("dragover", handleDragOver);
+      window.addEventListener("drop", handleDrop);
+      return () => {
+        window.removeEventListener("dragover", handleDragOver);
+        window.removeEventListener("drop", handleDrop);
+      };
+    }
+  }, []);
+
+  // --- Open files from OS (double-click, second instance, file association) ---
+
+  useEffect(() => {
+    if (!isTauri) return;
+
+    let unlisten: (() => void) | null = null;
+
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<string[]>("open-files", async (event) => {
+        const { readTextFile } = await import("@tauri-apps/plugin-fs");
+        for (const path of event.payload) {
           const existing = tabsRef.current.find((t) => t.filePath === path);
           if (existing) {
             setActiveTabId(existing.id);
@@ -267,12 +350,10 @@ function App() {
             // ignore unreadable files
           }
         }
-      }
+      }).then((fn) => { unlisten = fn; });
     });
 
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten?.(); };
   }, []);
 
   // --- Keyboard Shortcuts ---
