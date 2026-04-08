@@ -28,6 +28,7 @@ export default function EditorArea({
 
   const prevModeRef = useRef(mode);
   const prevTabIdRef = useRef(activeTabId);
+  const prevContentRef = useRef(initialContent);
 
   // Attach managers on mount
   useEffect(() => {
@@ -56,20 +57,30 @@ export default function EditorArea({
   useEffect(() => {
     const prevMode = prevModeRef.current;
     const prevTab = prevTabIdRef.current;
+    const prevContent = prevContentRef.current;
     prevModeRef.current = mode;
     prevTabIdRef.current = activeTabId;
+    prevContentRef.current = initialContent;
 
     const cmMgr = editorManagerRef.current;
     const mdMgr = milkdownManagerRef.current;
 
     const modeChanged = prevMode !== mode && prevTab === activeTabId;
+    // Detect external content load (file opened into existing tab)
+    const contentLoadedExternally = prevTab === activeTabId && !modeChanged
+      && prevContent !== initialContent
+      && initialContent !== (cmMgr.getContent(activeTabId) ?? "");
 
     if (mode === "raw") {
       // Activate CodeMirror
       if (modeChanged) {
         // visual → raw: sync content from Milkdown to CM
-        const markdown = mdMgr.getMarkdown(activeTabId) ?? initialContent;
+        // Uses getContentForRawSync to avoid false "modified" from normalization
+        const markdown = mdMgr.getContentForRawSync(activeTabId) ?? initialContent;
         cmMgr.setContent(activeTabId, markdown);
+      } else if (contentLoadedExternally) {
+        // File was opened into this tab — sync CM with new content
+        cmMgr.setContent(activeTabId, initialContent);
       }
       cmMgr.activate(activeTabId, initialContent);
     } else {

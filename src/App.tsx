@@ -8,10 +8,12 @@ import { EditorManager, type CursorInfo } from "./editor/EditorManager";
 import { MilkdownManager } from "./editor/MilkdownManager";
 import { openFile, saveFile, saveFileAs, basename, confirmUnsaved } from "./fileOps.platform";
 import { isTauri } from "./platform";
-import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSettings } from "./settings";
+import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSettings, loadRecentFiles, addRecentFile, clearRecentFiles } from "./settings";
 import { useToast, ToastContainer } from "./components/Toast";
 import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
 import { handleShortcuts, type Shortcut } from "./shortcuts";
+import { copyHtml, exportHtml } from "./export";
+import { saveRecovery, clearRecovery, hasRecoveryData, loadRecovery } from "./recovery";
 
 function App() {
   const { state, dispatch, getState, activeTab } = useDocumentStore();
@@ -20,7 +22,12 @@ function App() {
   const [mode, setMode] = useState<EditorMode>("raw");
   const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0 });
   const [settings, setSettings] = useState<EditorSettings>(loadSettings);
+  const [recentFiles, setRecentFiles] = useState<string[]>(loadRecentFiles);
   const { toasts, showToast, dismissToast } = useToast();
+
+  const trackRecent = useCallback((path: string | null) => {
+    if (path && isTauri) setRecentFiles(addRecentFile(path));
+  }, []);
 
   const editorManagerRef = useRef(new EditorManager());
   const milkdownManagerRef = useRef(new MilkdownManager());
@@ -65,6 +72,41 @@ function App() {
     editorManagerRef.current.updateSettings(settings);
   }, [settings]);
 
+  // --- Crash Recovery ---
+
+  // On mount: check for recovery data from a previous crash
+  useEffect(() => {
+    if (!hasRecoveryData()) return;
+    const data = loadRecovery();
+    if (!data) return;
+
+    const unsavedCount = data.tabs.filter((t) => t.content !== t.savedContent).length;
+    const doRestore = window.confirm(
+      `MDE found ${unsavedCount} unsaved document${unsavedCount > 1 ? "s" : ""} from a previous session. Restore them?`
+    );
+
+    if (doRestore) {
+      dispatch({ type: "SET_TABS", tabs: data.tabs });
+      dispatch({ type: "SET_ACTIVE", id: data.activeTabId });
+      showToast(`Restored ${unsavedCount} unsaved document${unsavedCount > 1 ? "s" : ""}`, "info");
+    }
+    clearRecovery();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Periodically save recovery data (every 10s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+      const hasUnsaved = currentTabs.some((t) => t.content !== t.savedContent);
+      if (hasUnsaved) {
+        saveRecovery(currentTabs, currentActiveId);
+      } else {
+        clearRecovery();
+      }
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [getState]);
+
   // --- File Operations ---
 
   const handleNew = useCallback(() => {
@@ -75,6 +117,7 @@ function App() {
     try {
       const result = await openFile();
       if (!result) return;
+      trackRecent(result.path);
 
       const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
 
@@ -108,7 +151,7 @@ function App() {
     } catch (err) {
       showToast(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, [dispatch, getState, showToast]);
+  }, [dispatch, getState, showToast, trackRecent]);
 
   const handleSave = useCallback(async () => {
     const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
@@ -139,6 +182,7 @@ function App() {
     try {
       const path = await saveFileAs(current.content, current.title);
       if (path) {
+        trackRecent(path);
         dispatch({
           type: "REPLACE_TAB",
           tabId: current.id,
@@ -148,7 +192,7 @@ function App() {
     } catch (err) {
       showToast(`Failed to save: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, [dispatch, getState, showToast]);
+  }, [dispatch, getState, showToast, trackRecent]);
 
   const handleCloseTab = useCallback(async (id: string) => {
     const { tabs: currentTabs } = getState();
@@ -180,7 +224,10 @@ function App() {
         const appWindow = getCurrentWindow();
         appWindow.onCloseRequested(async (event) => {
           const unsavedTabs = getState().tabs.filter(isModified);
-          if (unsavedTabs.length === 0) return;
+          if (unsavedTabs.length === 0) {
+            clearRecovery();
+            return;
+          }
 
           event.preventDefault();
 
@@ -196,6 +243,7 @@ function App() {
             }
           }
 
+          clearRecovery();
           await appWindow.destroy();
         }).then((fn) => { unlisten = fn; });
       });
@@ -364,17 +412,71 @@ function App() {
     []
   );
 
+  const handleCopyHtml = useCallback(async () => {
+    try {
+      await copyHtml(activeTab.content);
+      showToast("HTML copied to clipboard", "info");
+    } catch (err) {
+      showToast(`Failed to copy: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [activeTab.content, showToast]);
+
+  const handleExportHtml = useCallback(async () => {
+    try {
+      await exportHtml(activeTab.content, activeTab.title);
+    } catch (err) {
+      showToast(`Failed to export: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [activeTab.content, activeTab.title, showToast]);
+
+  const handleOpenRecent = useCallback(async (path: string) => {
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+
+    const existing = currentTabs.find((t) => t.filePath === path);
+    if (existing) {
+      dispatch({ type: "SET_ACTIVE", id: existing.id });
+      return;
+    }
+
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const content = await readTextFile(path);
+      const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
+      trackRecent(path);
+
+      const current = currentTabs.find((t) => t.id === currentActiveId);
+      if (current && !current.filePath && !isModified(current) && current.content === DEFAULT_CONTENT) {
+        editorManagerRef.current.setContent(current.id, content);
+        dispatch({ type: "OPEN_FILE_INTO_CURRENT", tabId: current.id, name, content, path });
+      } else {
+        dispatch({ type: "ADD_TAB", tab: { id: `file-${Date.now()}`, title: name, content, savedContent: content, filePath: path } });
+      }
+    } catch (err) {
+      showToast(`Failed to open: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [dispatch, getState, showToast, trackRecent]);
+
+  const handleClearRecent = useCallback(() => {
+    clearRecentFiles();
+    setRecentFiles([]);
+  }, []);
+
   const menuActions = {
     onNew: handleNew,
     onOpen: handleOpen,
     onSave: handleSave,
     onSaveAs: handleSaveAs,
+    onExportHtml: handleExportHtml,
     onCloseTab: () => handleCloseTab(getState().activeTabId),
     onToggleMode: handleToggleMode,
     onToggleWrap: handleToggleWrap,
     onFontSizeUp: handleFontSizeUp,
     onFontSizeDown: handleFontSizeDown,
     onFontSizeReset: handleFontSizeReset,
+    onCopyHtml: handleCopyHtml,
+    onOpenRecent: handleOpenRecent,
+    onClearRecent: handleClearRecent,
+    recentFiles,
   };
 
   return (

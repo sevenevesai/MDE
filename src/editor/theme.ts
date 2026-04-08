@@ -29,12 +29,67 @@ export const mdeEditorTheme = EditorView.theme(
     ".cm-panels": {
       backgroundColor: "#161b22",
       color: "#e6edf3",
+      fontSize: "13px",
     },
     ".cm-panels.cm-panels-top": {
       borderBottom: "1px solid #30363d",
     },
     ".cm-panels.cm-panels-bottom": {
       borderTop: "1px solid #30363d",
+    },
+    // Search panel styling
+    ".cm-search": {
+      padding: "6px 8px",
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "4px",
+      alignItems: "center",
+    },
+    ".cm-search input, .cm-search select": {
+      backgroundColor: "#0d1117",
+      color: "#e6edf3",
+      border: "1px solid #30363d",
+      borderRadius: "4px",
+      padding: "3px 8px",
+      fontSize: "12px",
+      outline: "none",
+    },
+    ".cm-search input:focus": {
+      borderColor: "#58a6ff",
+    },
+    ".cm-search button": {
+      backgroundColor: "#21262d",
+      color: "#e6edf3",
+      border: "1px solid #30363d",
+      borderRadius: "4px",
+      padding: "3px 10px",
+      fontSize: "12px",
+      cursor: "pointer",
+    },
+    ".cm-search button:hover": {
+      backgroundColor: "#30363d",
+    },
+    ".cm-search label": {
+      fontSize: "12px",
+      color: "#8b949e",
+      display: "flex",
+      alignItems: "center",
+      gap: "4px",
+    },
+    ".cm-search label input[type=checkbox]": {
+      accentColor: "#58a6ff",
+    },
+    ".cm-search .cm-button": {
+      backgroundImage: "none",
+    },
+    ".cm-panel.cm-search [name=close]": {
+      color: "#8b949e",
+      cursor: "pointer",
+      padding: "0 4px",
+      fontSize: "16px",
+    },
+    ".cm-panel.cm-search [name=close]:hover": {
+      color: "#e6edf3",
     },
     ".cm-searchMatch": {
       backgroundColor: "#e2c08d55",

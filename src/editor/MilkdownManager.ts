@@ -20,6 +20,12 @@ export class MilkdownManager {
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private creating = new Map<string, Promise<Crepe>>();
+  /** Tabs where onChange is suppressed (initial normalization pass). */
+  private suppressChange = new Set<string>();
+  /** Tracks whether the user actually edited content in visual mode. */
+  private userEdited = new Set<string>();
+  /** The original content passed to Milkdown for each tab. */
+  private originalContent = new Map<string, string>();
 
   attach(container: HTMLElement) {
     this.container = container;
@@ -91,9 +97,15 @@ export class MilkdownManager {
       },
     });
 
+    // Suppress onChange during creation to ignore Milkdown's normalization pass
+    this.suppressChange.add(tabId);
+    this.userEdited.delete(tabId);
+    this.originalContent.set(tabId, doc);
+
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
-        if (markdown !== prevMarkdown) {
+        if (markdown !== prevMarkdown && !this.suppressChange.has(tabId)) {
+          this.userEdited.add(tabId);
           this.onChangeRef.current?.(tabId, markdown);
         }
       });
@@ -101,6 +113,10 @@ export class MilkdownManager {
 
     await crepe.create();
     this.editors.set(tabId, crepe);
+
+    // Allow onChange after a tick (normalization is done by now)
+    requestAnimationFrame(() => this.suppressChange.delete(tabId));
+
     return crepe;
   }
 
@@ -169,12 +185,27 @@ export class MilkdownManager {
     }
   }
 
+  /**
+   * Get content to sync back to raw mode.
+   * Returns the original content if the user didn't edit in visual mode,
+   * avoiding false "modified" state from Milkdown's markdown normalization.
+   */
+  getContentForRawSync(tabId: string): string | undefined {
+    if (!this.userEdited.has(tabId)) {
+      return this.originalContent.get(tabId);
+    }
+    return this.getMarkdown(tabId);
+  }
+
   removeEditor(tabId: string) {
     const crepe = this.editors.get(tabId);
     if (crepe) {
       try { crepe.destroy(); } catch { /* ignore */ }
       this.editors.delete(tabId);
     }
+    this.userEdited.delete(tabId);
+    this.originalContent.delete(tabId);
+    this.suppressChange.delete(tabId);
     const wrapper = this.wrappers.get(tabId);
     if (wrapper) {
       wrapper.remove();

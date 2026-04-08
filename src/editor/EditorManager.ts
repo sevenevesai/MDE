@@ -1,4 +1,4 @@
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, EditorSelection, Compartment } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -64,6 +64,7 @@ export class EditorManager {
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private settings: EditorSettings = { wordWrap: true, fontSize: 14 };
   private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
+  private contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private lastWordCount = 0;
 
   attach(container: HTMLElement) {
@@ -145,7 +146,11 @@ export class EditorManager {
       fontComp.of(EditorView.theme({ ".cm-content": { fontSize: `${this.settings.fontSize}px` } })),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          this.onChangeRef.current?.(tabId, update.state.doc.toString());
+          // Debounce content sync to React for large file performance
+          if (this.contentSyncTimer) clearTimeout(this.contentSyncTimer);
+          this.contentSyncTimer = setTimeout(() => {
+            this.onChangeRef.current?.(tabId, update.state.doc.toString());
+          }, 100);
         }
         if (update.selectionSet || update.docChanged) {
           const state = update.state;
@@ -221,6 +226,13 @@ export class EditorManager {
 
     const view = this.editors.get(tabId);
     if (view) {
+      // Force CodeMirror to remeasure after the wrapper becomes visible.
+      // Without this, editors created in display:none containers have 0px height.
+      requestAnimationFrame(() => {
+        view.requestMeasure();
+        view.focus();
+      });
+
       const state = view.state;
       const pos = state.selection.main.head;
       const line = state.doc.lineAt(pos);
@@ -231,7 +243,6 @@ export class EditorManager {
         column: pos - line.from + 1,
         wordCount: this.lastWordCount,
       });
-      view.focus();
     }
   }
 
@@ -240,8 +251,12 @@ export class EditorManager {
     if (!view) return;
     const current = view.state.doc.toString();
     if (current !== content) {
+      // Preserve cursor position (clamped to new doc length)
+      const prevPos = view.state.selection.main.head;
+      const newPos = Math.min(prevPos, content.length);
       view.dispatch({
         changes: { from: 0, to: current.length, insert: content },
+        selection: EditorSelection.single(newPos),
       });
     }
   }

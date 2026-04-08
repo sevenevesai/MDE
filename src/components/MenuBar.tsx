@@ -67,12 +67,17 @@ export interface MenuActions {
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  onExportHtml: () => void;
   onCloseTab: () => void;
   onToggleMode: () => void;
   onToggleWrap: () => void;
   onFontSizeUp: () => void;
   onFontSizeDown: () => void;
   onFontSizeReset: () => void;
+  onCopyHtml: () => void;
+  onOpenRecent: (path: string) => void;
+  onClearRecent: () => void;
+  recentFiles: string[];
 }
 
 export default function MenuBar({ actions }: { actions: MenuActions }) {
@@ -112,12 +117,29 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     fn();
   };
 
+  const recentEntries: MenuEntry[] = actions.recentFiles.length > 0
+    ? [
+        { separator: true },
+        ...actions.recentFiles.map((path) => ({
+          label: path.replace(/\\/g, "/").split("/").pop() ?? path,
+          shortcut: undefined,
+          action: () => act(() => actions.onOpenRecent(path)),
+          separator: false as const,
+        })),
+        { separator: true },
+        { label: "Clear Recent", action: () => act(actions.onClearRecent), separator: false as const },
+      ]
+    : [];
+
   const fileItems: MenuEntry[] = [
     { label: "New", shortcut: "Ctrl+N", action: () => act(actions.onNew) },
     { label: "Open...", shortcut: "Ctrl+O", action: () => act(actions.onOpen) },
+    ...recentEntries,
     { separator: true },
     { label: "Save", shortcut: "Ctrl+S", action: () => act(actions.onSave) },
     { label: "Save As...", shortcut: "Ctrl+Shift+S", action: () => act(actions.onSaveAs) },
+    { separator: true },
+    { label: "Export HTML...", action: () => act(actions.onExportHtml) },
     { separator: true },
     { label: "Close Tab", shortcut: "Ctrl+W", action: () => act(actions.onCloseTab) },
   ];
@@ -125,6 +147,8 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
   const editItems: MenuEntry[] = [
     { label: "Toggle Mode", shortcut: "Ctrl+E", action: () => act(actions.onToggleMode) },
     { label: "Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: () => act(actions.onToggleWrap) },
+    { separator: true },
+    { label: "Copy as HTML", action: () => act(actions.onCopyHtml) },
     { separator: true },
     { label: "Increase Font Size", shortcut: "Ctrl+=", action: () => act(actions.onFontSizeUp) },
     { label: "Decrease Font Size", shortcut: "Ctrl+-", action: () => act(actions.onFontSizeDown) },
