@@ -1,5 +1,7 @@
 # MDE
 
+**Website:** https://seveneves.ai/mde/
+
 Lightweight markdown editor. Desktop app + [browser version](https://seveneves.ai/mde/app/).
 
 ## Download
