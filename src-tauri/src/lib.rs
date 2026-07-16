@@ -24,7 +24,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        // Restore position/size but NOT visibility — the window starts hidden
+        // (visible:false) and is shown by hand on frontend-ready to kill the
+        // startup flash; letting window-state restore visibility would re-show
+        // it early before the UI has painted.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Second instance: forward file paths to the running instance
             let files = extract_file_args(&argv);
@@ -48,20 +56,26 @@ pub fn run() {
             let args: Vec<String> = std::env::args().collect();
             let files = extract_file_args(&args);
 
-            if !files.is_empty() {
-                let pending = Mutex::new(Some(files));
-                let listener_handle = app.handle().clone();
-                let emitter_handle = app.handle().clone();
+            let pending = Mutex::new(Some(files));
+            let listener_handle = app.handle().clone();
+            let handle = app.handle().clone();
 
-                // When the frontend signals it's ready, emit the files
-                listener_handle.listen("frontend-ready", move |_| {
-                    if let Ok(mut guard) = pending.lock() {
-                        if let Some(files) = guard.take() {
-                            let _ = emitter_handle.emit("open-files", files);
+            // The window is created hidden (visible:false). When the frontend
+            // signals it has painted, show + focus it (no startup flash) and
+            // flush any pending file-open arguments to it.
+            listener_handle.listen("frontend-ready", move |_| {
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                if let Ok(mut guard) = pending.lock() {
+                    if let Some(files) = guard.take() {
+                        if !files.is_empty() {
+                            let _ = handle.emit("open-files", files);
                         }
                     }
-                });
-            }
+                }
+            });
 
             Ok(())
         })
