@@ -1,9 +1,38 @@
-import { Crepe, CrepeFeature } from "@milkdown/crepe";
-import { replaceAll } from "@milkdown/utils";
+import type { Crepe } from "@milkdown/crepe";
 import type { CursorInfo } from "./EditorManager";
 
 type ChangeCallback = (tabId: string, doc: string) => void;
 type CursorCallback = (info: CursorInfo) => void;
+
+/**
+ * The Milkdown/Crepe graph (ProseMirror + CodeMirror + the Crepe theme CSS) is
+ * heavy and only needed in visual mode. It is loaded via dynamic import() the
+ * first time an editor is built, so raw-mode-only sessions never pay for it and
+ * the whole stack lands in a separate build chunk instead of the startup bundle.
+ */
+type MilkdownModule = {
+  Crepe: typeof import("@milkdown/crepe").Crepe;
+  CrepeFeature: typeof import("@milkdown/crepe").CrepeFeature;
+  replaceAll: typeof import("@milkdown/utils").replaceAll;
+};
+
+let milkdownModule: Promise<MilkdownModule> | null = null;
+
+function loadMilkdown(): Promise<MilkdownModule> {
+  if (milkdownModule) return milkdownModule;
+  milkdownModule = (async () => {
+    const [crepe, utils] = await Promise.all([
+      import("@milkdown/crepe"),
+      import("@milkdown/utils"),
+      // CSS is pulled into the same lazy chunk instead of the startup bundle.
+      import("@milkdown/crepe/theme/common/style.css"),
+      import("@milkdown/crepe/theme/frame-dark.css"),
+      import("./milkdown-dark.css"),
+    ]);
+    return { Crepe: crepe.Crepe, CrepeFeature: crepe.CrepeFeature, replaceAll: utils.replaceAll };
+  })();
+  return milkdownModule;
+}
 
 /**
  * Manages Milkdown Crepe editor instances for WYSIWYG mode.
@@ -80,6 +109,7 @@ export class MilkdownManager {
   }
 
   private async buildEditor(tabId: string, wrapper: HTMLElement, doc: string): Promise<Crepe> {
+    const { Crepe, CrepeFeature } = await loadMilkdown();
     const crepe = new Crepe({
       root: wrapper,
       defaultValue: doc,
@@ -157,6 +187,8 @@ export class MilkdownManager {
 
     if (existing) {
       try {
+        // Milkdown is already loaded if an editor exists, so this resolves synchronously.
+        const { replaceAll } = await loadMilkdown();
         existing.editor.action(replaceAll(markdown));
         return;
       } catch {
