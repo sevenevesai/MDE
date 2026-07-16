@@ -47,7 +47,7 @@ type DocAction =
   | { type: "REMOVE_TAB"; id: string; replacement?: DocTab }
   | { type: "OPEN_FILE_INTO_CURRENT"; tabId: string; name: string; content: string; path: string };
 
-function docReducer(state: DocState, action: DocAction): DocState {
+export function docReducer(state: DocState, action: DocAction): DocState {
   switch (action.type) {
     case "ADD_TAB":
       return {

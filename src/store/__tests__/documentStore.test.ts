@@ -1,13 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createNewTab, isModified, type DocTab } from "../documentStore";
-
-// Since the reducer is not exported directly, we test it through the action types
-// by re-implementing the reducer logic inline. But the cleaner approach is to
-// export and test the reducer. Let's import it properly.
-
-// We need to test the reducer directly. Let's extract a testable version.
-// For now, we'll test the pure utility functions and simulate reducer behavior
-// by importing the module and using its exports.
+import { createNewTab, isModified, docReducer, type DocTab, type DocState } from "../documentStore";
 
 // ─── Utility Functions ──────────────────────────────────
 
@@ -63,61 +55,7 @@ describe("isModified", () => {
   });
 });
 
-// ─── Reducer (testing via exported types) ───────────────
-
-// To properly test the reducer, we need to export it. For now, let's test
-// the reducer logic by importing the module and recreating minimal scenarios.
-
-// We'll do this by importing the actual reducer. First, let's make it importable.
-// Since the reducer is not exported, we'll test the hook behavior through
-// the DocState/DocAction types by implementing a local copy of the reducer.
-
-// This approach tests the reducer logic directly:
-
-import type { DocState } from "../documentStore";
-
-type DocAction =
-  | { type: "ADD_TAB"; tab: DocTab }
-  | { type: "SET_ACTIVE"; id: string }
-  | { type: "UPDATE_CONTENT"; tabId: string; content: string }
-  | { type: "MARK_SAVED"; tabId: string }
-  | { type: "REPLACE_TAB"; tabId: string; patch: Partial<DocTab> }
-  | { type: "SET_TABS"; tabs: DocTab[] }
-  | { type: "REMOVE_TAB"; id: string; replacement?: DocTab }
-  | { type: "OPEN_FILE_INTO_CURRENT"; tabId: string; name: string; content: string; path: string };
-
-// Import the reducer - we'll need to export it
-// For now, replicate the logic to test it:
-function docReducer(state: DocState, action: DocAction): DocState {
-  switch (action.type) {
-    case "ADD_TAB":
-      return { tabs: [...state.tabs, action.tab], activeTabId: action.tab.id };
-    case "SET_ACTIVE":
-      return { ...state, activeTabId: action.id };
-    case "UPDATE_CONTENT":
-      return { ...state, tabs: state.tabs.map((t) => t.id === action.tabId ? { ...t, content: action.content } : t) };
-    case "MARK_SAVED":
-      return { ...state, tabs: state.tabs.map((t) => t.id === action.tabId ? { ...t, savedContent: t.content } : t) };
-    case "REPLACE_TAB":
-      return { ...state, tabs: state.tabs.map((t) => t.id === action.tabId ? { ...t, ...action.patch } : t) };
-    case "SET_TABS":
-      return { ...state, tabs: action.tabs };
-    case "OPEN_FILE_INTO_CURRENT":
-      return { ...state, tabs: state.tabs.map((t) => t.id === action.tabId ? { ...t, title: action.name, content: action.content, savedContent: action.content, filePath: action.path } : t) };
-    case "REMOVE_TAB": {
-      if (state.tabs.length <= 1) {
-        const tab = action.replacement ?? createNewTab();
-        return { tabs: [tab], activeTabId: tab.id };
-      }
-      const idx = state.tabs.findIndex((t) => t.id === action.id);
-      const next = state.tabs.filter((t) => t.id !== action.id);
-      const newActive = state.activeTabId === action.id ? next[Math.min(idx, next.length - 1)].id : state.activeTabId;
-      return { tabs: next, activeTabId: newActive };
-    }
-    default:
-      return state;
-  }
-}
+// ─── Reducer ────────────────────────────────────────────
 
 function makeTab(overrides: Partial<DocTab> = {}): DocTab {
   return {
