@@ -145,7 +145,7 @@ export class MilkdownManager {
     try {
       const text = crepe.getMarkdown();
       const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-      this.onCursorRef.current?.({ line: 1, column: 1, wordCount: words });
+      this.onCursorRef.current?.({ line: 1, column: 1, wordCount: words, charCount: text.length });
     } catch {
       // getMarkdown can throw if editor isn't fully ready
     }

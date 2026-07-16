@@ -76,6 +76,10 @@ export interface MenuActions {
   onFontSizeDown: () => void;
   onFontSizeReset: () => void;
   onCopyHtml: () => void;
+  onCopyForAI: () => void;
+  onCleanPaste: () => void;
+  onToggleCheckbox: () => void;
+  onFormatTable: () => void;
   onOpenRecent: (path: string) => void;
   onClearRecent: () => void;
   onCheckUpdates: () => void;
@@ -151,6 +155,11 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     { label: "Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: () => act(actions.onToggleWrap) },
     { separator: true },
     { label: "Copy as HTML", action: () => act(actions.onCopyHtml) },
+    { separator: true },
+    { label: "Copy for AI", shortcut: "Ctrl+Shift+A", action: () => act(actions.onCopyForAI) },
+    { label: "Clean AI Paste", action: () => act(actions.onCleanPaste) },
+    { label: "Toggle Checkbox", shortcut: "Ctrl+Shift+9", action: () => act(actions.onToggleCheckbox) },
+    { label: "Format Table", action: () => act(actions.onFormatTable) },
     { separator: true },
     { label: "Increase Font Size", shortcut: "Ctrl+=", action: () => act(actions.onFontSizeUp) },
     { label: "Decrease Font Size", shortcut: "Ctrl+-", action: () => act(actions.onFontSizeDown) },

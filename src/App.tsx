@@ -13,6 +13,8 @@ import { useToast, ToastContainer } from "./components/Toast";
 import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
 import { handleShortcuts, type Shortcut } from "./shortcuts";
 import { copyHtml, exportHtml } from "./export";
+import { buildCopyForAI, cleanAIText } from "./aiTools";
+import { toggleCheckbox, formatTableAtCursor } from "./editor/commands";
 import { saveRecovery, clearRecovery, hasRecoveryData, loadRecovery } from "./recovery";
 import { checkForUpdates } from "./updater";
 
@@ -21,7 +23,7 @@ function App() {
   const { tabs, activeTabId } = state;
 
   const [mode, setMode] = useState<EditorMode>("raw");
-  const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0 });
+  const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0, charCount: 0 });
   const [settings, setSettings] = useState<EditorSettings>(loadSettings);
   const [recentFiles, setRecentFiles] = useState<string[]>(loadRecentFiles);
   const { toasts, showToast, dismissToast } = useToast();
@@ -394,6 +396,16 @@ function App() {
     return () => clearTimeout(id);
   }, [showToast]);
 
+  const handleCopyForAI = useCallback(async () => {
+    try {
+      const payload = buildCopyForAI(activeTab.filePath ?? activeTab.title, activeTab.content);
+      await navigator.clipboard.writeText(payload);
+      showToast("Copied for AI", "info");
+    } catch (err) {
+      showToast(`Failed to copy: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [activeTab.filePath, activeTab.title, activeTab.content, showToast]);
+
   // --- Keyboard Shortcuts (data-driven registry) ---
 
   useEffect(() => {
@@ -404,6 +416,7 @@ function App() {
       { key: "s", ctrl: true, action: handleSave },
       { key: "w", ctrl: true, action: () => handleCloseTab(getState().activeTabId) },
       { key: "e", ctrl: true, action: handleToggleMode },
+      { key: "A", ctrl: true, shift: true, action: handleCopyForAI },
       { key: "w", ctrl: true, alt: true, action: handleToggleWrap },
       { key: "W", ctrl: true, alt: true, action: handleToggleWrap },
       { key: "=", ctrl: true, action: handleFontSizeUp },
@@ -416,7 +429,8 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleNew, handleOpen, handleSave, handleSaveAs, handleCloseTab, handleToggleMode,
-      handleToggleWrap, handleFontSizeUp, handleFontSizeDown, handleFontSizeReset, getState]);
+      handleCopyForAI, handleToggleWrap, handleFontSizeUp, handleFontSizeDown,
+      handleFontSizeReset, getState]);
 
   const getActiveView = useCallback(
     () => editorManagerRef.current.getActiveView(),
@@ -476,6 +490,42 @@ function App() {
     void checkForUpdates(showToast, { silent: false });
   }, [showToast]);
 
+  // --- AI Tools ---
+
+  const handleCleanPaste = useCallback(() => {
+    const view = getActiveView();
+    if (!view) return;
+    const sel = view.state.selection.main;
+    const hasSelection = sel.from !== sel.to;
+    const from = hasSelection ? sel.from : 0;
+    const to = hasSelection ? sel.to : view.state.doc.length;
+    const { text, count } = cleanAIText(view.state.sliceDoc(from, to));
+    if (count > 0) {
+      view.dispatch({ changes: { from, to, insert: text } });
+      showToast(`Cleaned ${count} characters`, "info");
+    } else {
+      showToast("Nothing to clean", "info");
+    }
+  }, [getActiveView, showToast]);
+
+  const handleToggleCheckbox = useCallback(() => {
+    const view = getActiveView();
+    if (view) {
+      toggleCheckbox(view);
+      view.focus();
+    }
+  }, [getActiveView]);
+
+  const handleFormatTable = useCallback(() => {
+    const view = getActiveView();
+    if (!view) return;
+    if (formatTableAtCursor(view)) {
+      view.focus();
+    } else {
+      showToast("Cursor is not in a table", "info");
+    }
+  }, [getActiveView, showToast]);
+
   const menuActions = {
     onNew: handleNew,
     onOpen: handleOpen,
@@ -489,6 +539,10 @@ function App() {
     onFontSizeDown: handleFontSizeDown,
     onFontSizeReset: handleFontSizeReset,
     onCopyHtml: handleCopyHtml,
+    onCopyForAI: handleCopyForAI,
+    onCleanPaste: handleCleanPaste,
+    onToggleCheckbox: handleToggleCheckbox,
+    onFormatTable: handleFormatTable,
     onOpenRecent: handleOpenRecent,
     onClearRecent: handleClearRecent,
     onCheckUpdates: handleCheckUpdates,
@@ -518,6 +572,7 @@ function App() {
         line={cursorInfo.line}
         column={cursorInfo.column}
         wordCount={cursorInfo.wordCount}
+        charCount={cursorInfo.charCount}
         mode={mode}
         onToggleMode={handleToggleMode}
         wordWrap={settings.wordWrap}

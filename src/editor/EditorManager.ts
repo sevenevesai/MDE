@@ -15,7 +15,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import {
   toggleBold, toggleItalic, toggleStrikethrough, toggleInlineCode,
   insertLink, insertImage, toggleBulletList, toggleOrderedList,
-  toggleBlockquote, insertCodeBlock, setHeading,
+  toggleBlockquote, insertCodeBlock, setHeading, toggleCheckbox,
 } from "./commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -41,6 +41,7 @@ export interface CursorInfo {
   line: number;
   column: number;
   wordCount: number;
+  charCount: number;
 }
 
 type ChangeCallback = (tabId: string, doc: string) => void;
@@ -66,6 +67,7 @@ export class EditorManager {
   private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
   private contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private lastWordCount = 0;
+  private lastCharCount = 0;
 
   attach(container: HTMLElement) {
     this.container = container;
@@ -118,6 +120,7 @@ export class EditorManager {
         { key: "Mod-Shift-k", run: insertImage },
         { key: "Mod-Shift-8", run: toggleBulletList },
         { key: "Mod-Shift-7", run: toggleOrderedList },
+        { key: "Mod-Shift-9", run: toggleCheckbox },
         { key: "Mod-Shift-.", run: toggleBlockquote },
         { key: "Mod-Shift-`", run: insertCodeBlock },
         { key: "Mod-1", run: (v) => setHeading(v, 1) },
@@ -157,11 +160,12 @@ export class EditorManager {
           const pos = state.selection.main.head;
           const line = state.doc.lineAt(pos);
 
-          // Cursor position is instant; word count is debounced
+          // Cursor position is instant; word/char counts are debounced
           this.onCursorRef.current?.({
             line: line.number,
             column: pos - line.from + 1,
             wordCount: this.lastWordCount,
+            charCount: this.lastCharCount,
           });
 
           if (update.docChanged) {
@@ -169,10 +173,12 @@ export class EditorManager {
             this.wordCountTimer = setTimeout(() => {
               const text = update.state.doc.toString();
               this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+              this.lastCharCount = text.length;
               this.onCursorRef.current?.({
                 line: line.number,
                 column: pos - line.from + 1,
                 wordCount: this.lastWordCount,
+                charCount: this.lastCharCount,
               });
             }, 250);
           }
@@ -238,10 +244,12 @@ export class EditorManager {
       const line = state.doc.lineAt(pos);
       const text = state.doc.toString();
       this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+      this.lastCharCount = text.length;
       this.onCursorRef.current?.({
         line: line.number,
         column: pos - line.from + 1,
         wordCount: this.lastWordCount,
+        charCount: this.lastCharCount,
       });
     }
   }
