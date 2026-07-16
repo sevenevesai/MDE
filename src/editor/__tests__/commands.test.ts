@@ -14,6 +14,8 @@ import {
   toggleBlockquote,
   insertCodeBlock,
   insertHorizontalRule,
+  toggleCheckbox,
+  formatTableAtCursor,
 } from "../commands";
 
 /** Create a minimal EditorView with given doc and optional selection. */
@@ -285,5 +287,87 @@ describe("insertHorizontalRule", () => {
     const view = makeView("paragraph", 5);
     insertHorizontalRule(view);
     expect(result(view).doc).toBe("paragraph\n---\n");
+  });
+});
+
+// ─── Toggle Checkbox ────────────────────────────────────
+
+describe("toggleCheckbox", () => {
+  it("turns a plain line into an unchecked item", () => {
+    const view = makeView("buy milk", 0, 8);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [ ] buy milk");
+  });
+
+  it("checks an unchecked box", () => {
+    const view = makeView("- [ ] task", 0, 10);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [x] task");
+  });
+
+  it("unchecks a checked box", () => {
+    const view = makeView("- [x] task", 0, 10);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [ ] task");
+  });
+
+  it("adds a box to an existing bullet item", () => {
+    const view = makeView("- item", 0, 6);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [ ] item");
+  });
+
+  it("supports * markers", () => {
+    const view = makeView("* item", 0, 6);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("* [ ] item");
+  });
+
+  it("supports ordered markers", () => {
+    const view = makeView("1. item", 0, 7);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("1. [ ] item");
+  });
+
+  it("toggles every line across a multi-line selection", () => {
+    const view = makeView("- [ ] a\n- [ ] b", 0, 15);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [x] a\n- [x] b");
+  });
+
+  it("leaves blank lines untouched", () => {
+    const view = makeView("a\n\nb", 0, 4);
+    toggleCheckbox(view);
+    expect(result(view).doc).toBe("- [ ] a\n\n- [ ] b");
+  });
+});
+
+// ─── Format Table ───────────────────────────────────────
+
+describe("formatTableAtCursor", () => {
+  it("reformats the table containing the cursor", () => {
+    const view = makeView("| a | b |\n|---|---|\n| 1 | 2 |", 2);
+    const ok = formatTableAtCursor(view);
+    expect(ok).toBe(true);
+    expect(result(view).doc).toBe("| a   | b   |\n| --- | --- |\n| 1   | 2   |");
+  });
+
+  it("finds the table when the cursor is on a body row", () => {
+    const doc = "| a | b |\n|---|---|\n| longer | y |";
+    const view = makeView(doc, doc.length - 2);
+    formatTableAtCursor(view);
+    expect(result(view).doc).toBe("| a      | b   |\n| ------ | --- |\n| longer | y   |");
+  });
+
+  it("returns false when the cursor is not in a table", () => {
+    const view = makeView("just a paragraph", 4);
+    const ok = formatTableAtCursor(view);
+    expect(ok).toBe(false);
+    expect(result(view).doc).toBe("just a paragraph");
+  });
+
+  it("returns false for pipe lines without an alignment row", () => {
+    const view = makeView("a | b\nc | d", 0);
+    expect(formatTableAtCursor(view)).toBe(false);
   });
 });
