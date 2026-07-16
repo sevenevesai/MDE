@@ -36,6 +36,7 @@ import { lintKeymap } from "@codemirror/lint";
 import { showMinimap } from "@replit/codemirror-minimap";
 import { mdeEditorTheme, mdeHighlightStyle } from "./theme";
 import type { EditorSettings } from "../settings";
+import { perf } from "../perf";
 
 export interface CursorInfo {
   line: number;
@@ -52,6 +53,37 @@ function createMinimapDom(): { dom: HTMLElement } {
 }
 
 /**
+ * The minimap's LinesState recomputes the whole-document line model on every
+ * keystroke, so its per-key cost grows linearly with document size. Measured
+ * overhead (state-level, excludes canvas draw so it's a lower bound):
+ *   10k lines ≈ +0.6ms/key · 20k ≈ +1.8ms/key · 50k ≈ +5.7ms/key.
+ * Above this threshold the minimap is dropped from the editor via a compartment
+ * so typing stays snappy; normal markdown files are far below it and keep it.
+ */
+const MINIMAP_MAX_LINES = 10000;
+
+function countLines(doc: string): number {
+  let lines = 1;
+  for (let i = 0; i < doc.length; i++) {
+    if (doc.charCodeAt(i) === 10 /* \n */) lines++;
+  }
+  return lines;
+}
+
+function minimapExtension() {
+  return showMinimap.compute([], () => ({
+    create: createMinimapDom,
+    displayText: "blocks" as const,
+    showOverlay: "always" as const,
+  }));
+}
+
+/** The minimap extension for a document, or nothing if it's too large. */
+function minimapFor(doc: string) {
+  return countLines(doc) <= MINIMAP_MAX_LINES ? minimapExtension() : [];
+}
+
+/**
  * Manages a pool of CodeMirror EditorView instances, one per tab.
  * Supports dynamic word wrap and font size via Compartments.
  */
@@ -59,6 +91,7 @@ export class EditorManager {
   private editors = new Map<string, EditorView>();
   private wrapCompartments = new Map<string, Compartment>();
   private fontCompartments = new Map<string, Compartment>();
+  private minimapCompartments = new Map<string, Compartment>();
   private container: HTMLElement | null = null;
   private activeId: string | null = null;
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
@@ -78,6 +111,7 @@ export class EditorManager {
     this.editors.clear();
     this.wrapCompartments.clear();
     this.fontCompartments.clear();
+    this.minimapCompartments.clear();
     this.container = null;
     this.activeId = null;
   }
@@ -94,7 +128,13 @@ export class EditorManager {
     this.settings = settings;
   }
 
-  private buildExtensions(tabId: string, wrapComp: Compartment, fontComp: Compartment) {
+  private buildExtensions(
+    tabId: string,
+    wrapComp: Compartment,
+    fontComp: Compartment,
+    minimapComp: Compartment,
+    initialDoc: string,
+  ) {
     return [
       highlightSpecialChars(),
       history(),
@@ -139,11 +179,8 @@ export class EditorManager {
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       mdeEditorTheme,
       mdeHighlightStyle,
-      showMinimap.compute([], () => ({
-        create: createMinimapDom,
-        displayText: "blocks",
-        showOverlay: "always",
-      })),
+      // Minimap, disabled above MINIMAP_MAX_LINES for typing performance.
+      minimapComp.of(minimapFor(initialDoc)),
       // Dynamic compartments
       wrapComp.of(this.settings.wordWrap ? EditorView.lineWrapping : []),
       fontComp.of(EditorView.theme({ ".cm-content": { fontSize: `${this.settings.fontSize}px` } })),
@@ -206,12 +243,14 @@ export class EditorManager {
 
     const wrapComp = new Compartment();
     const fontComp = new Compartment();
+    const minimapComp = new Compartment();
     this.wrapCompartments.set(tabId, wrapComp);
     this.fontCompartments.set(tabId, fontComp);
+    this.minimapCompartments.set(tabId, minimapComp);
 
     const state = EditorState.create({
       doc: initialDoc,
-      extensions: this.buildExtensions(tabId, wrapComp, fontComp),
+      extensions: this.buildExtensions(tabId, wrapComp, fontComp, minimapComp, initialDoc),
     });
 
     view = new EditorView({ state, parent: wrapper });
@@ -220,6 +259,7 @@ export class EditorManager {
   }
 
   activate(tabId: string, initialDoc: string) {
+    const doneSwitch = perf.tabSwitch(tabId);
     this.ensureEditor(tabId, initialDoc);
 
     if (this.container) {
@@ -237,6 +277,8 @@ export class EditorManager {
       requestAnimationFrame(() => {
         view.requestMeasure();
         view.focus();
+        perf.editorReady();
+        doneSwitch();
       });
 
       const state = view.state;
@@ -262,9 +304,13 @@ export class EditorManager {
       // Preserve cursor position (clamped to new doc length)
       const prevPos = view.state.selection.main.head;
       const newPos = Math.min(prevPos, content.length);
+      // Loading a new document may cross the minimap size threshold — reconfigure
+      // in the same transaction so large files never mount the minimap at all.
+      const minimapComp = this.minimapCompartments.get(tabId);
       view.dispatch({
         changes: { from: 0, to: current.length, insert: content },
         selection: EditorSelection.single(newPos),
+        effects: minimapComp ? minimapComp.reconfigure(minimapFor(content)) : [],
       });
     }
   }
@@ -278,6 +324,7 @@ export class EditorManager {
       this.editors.delete(tabId);
       this.wrapCompartments.delete(tabId);
       this.fontCompartments.delete(tabId);
+      this.minimapCompartments.delete(tabId);
     }
   }
 
