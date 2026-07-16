@@ -23,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Second instance: forward file paths to the running instance
@@ -38,6 +39,11 @@ pub fn run() {
             }
         }))
         .setup(|app| {
+            // Auto-updater is desktop-only; register it here so mobile targets skip it.
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             // On initial launch, check for file arguments and stash them
             let args: Vec<String> = std::env::args().collect();
             let files = extract_file_args(&args);

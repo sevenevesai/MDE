@@ -26,9 +26,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ2MDM2MkFCM0FFRkExQzMKUldURG9lODZxMklEUm1WMnZ5QW01bU1BWnh5dmhyRjYwSWhPbEhkd29hSWdPMWhxVnd2ejY5b24K",
+      "endpoints": [
+        "https://github.com/sevenevesai/MDE/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
         "ext": ["md", "markdown", "mdx"],

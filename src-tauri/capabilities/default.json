@@ -21,6 +21,8 @@
     "fs:allow-write-text-file",
     "fs:allow-exists",
     "core:event:default",
+    "updater:default",
+    "process:default",
     {
       "identifier": "fs:scope",
       "allow": [
