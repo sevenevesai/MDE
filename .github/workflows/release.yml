@@ -57,9 +57,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update artifacts and generates the detached signatures that
+          # latest.json references. Key has no password (empty string).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MDE ${{ github.ref_name }}"
+          # Publish latest.json alongside the installers so the in-app updater can find it.
+          includeUpdaterJson: true
           releaseBody: |
             Lightweight markdown editor built with Tauri 2 + React + CodeMirror 6 + Milkdown.
 
