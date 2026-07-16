@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastMessage {
   id: number;
   text: string;
   kind: "error" | "info";
+  /** Optional action button. Toasts with an action never auto-dismiss. */
+  action?: ToastAction;
 }
 
 let nextId = 0;
@@ -12,10 +19,13 @@ let nextId = 0;
 export function useToast() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const show = useCallback((text: string, kind: "error" | "info" = "error") => {
-    const id = nextId++;
-    setToasts((prev) => [...prev, { id, text, kind }]);
-  }, []);
+  const show = useCallback(
+    (text: string, kind: "error" | "info" = "error", action?: ToastAction) => {
+      const id = nextId++;
+      setToasts((prev) => [...prev, { id, text, kind, action }]);
+    },
+    []
+  );
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -45,9 +55,11 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Toasts with an action persist until the user acts or dismisses them.
+    if (toast.action) return;
     timerRef.current = setTimeout(() => onDismiss(toast.id), 5000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [toast.id, onDismiss]);
+  }, [toast.id, toast.action, onDismiss]);
 
   const bg = toast.kind === "error" ? "bg-red-900/90 border-red-700" : "bg-bg-secondary border-border";
 
@@ -56,6 +68,14 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
       className={`px-4 py-2.5 rounded border text-xs text-text-primary shadow-lg flex items-start gap-2 ${bg}`}
     >
       <span className="flex-1">{toast.text}</span>
+      {toast.action && (
+        <button
+          onClick={() => { toast.action!.onClick(); onDismiss(toast.id); }}
+          className="shrink-0 font-medium text-accent hover:underline"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         onClick={() => onDismiss(toast.id)}
         className="text-text-muted hover:text-text-primary shrink-0"

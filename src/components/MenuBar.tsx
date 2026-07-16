@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { isTauri } from "../platform";
 
 interface MenuItem {
   label: string;
@@ -77,6 +78,7 @@ export interface MenuActions {
   onCopyHtml: () => void;
   onOpenRecent: (path: string) => void;
   onClearRecent: () => void;
+  onCheckUpdates: () => void;
   recentFiles: string[];
 }
 
@@ -155,6 +157,11 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     { label: "Reset Font Size", shortcut: "Ctrl+0", action: () => act(actions.onFontSizeReset) },
   ];
 
+  // "Check for Updates" only exists in the desktop app.
+  const helpItems: MenuEntry[] = [
+    { label: "Check for Updates…", action: () => act(actions.onCheckUpdates) },
+  ];
+
   const anyOpen = openMenu !== null;
 
   return (
@@ -175,6 +182,16 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
         onHover={() => setOpenMenu("edit")}
         anyOpen={anyOpen}
       />
+      {isTauri && (
+        <Menu
+          label="Help"
+          items={helpItems}
+          isOpen={openMenu === "help"}
+          onToggle={() => setOpenMenu(openMenu === "help" ? null : "help")}
+          onHover={() => setOpenMenu("help")}
+          anyOpen={anyOpen}
+        />
+      )}
     </div>
   );
 }

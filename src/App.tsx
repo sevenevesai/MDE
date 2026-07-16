@@ -14,6 +14,7 @@ import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTa
 import { handleShortcuts, type Shortcut } from "./shortcuts";
 import { copyHtml, exportHtml } from "./export";
 import { saveRecovery, clearRecovery, hasRecoveryData, loadRecovery } from "./recovery";
+import { checkForUpdates } from "./updater";
 
 function App() {
   const { state, dispatch, getState, activeTab } = useDocumentStore();
@@ -383,6 +384,16 @@ function App() {
     return () => { unlisten?.(); };
   }, [dispatch, getState]);
 
+  // --- Auto-update: silent check a few seconds after startup (never blocks launch) ---
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const id = setTimeout(() => {
+      void checkForUpdates(showToast, { silent: true });
+    }, 4000);
+    return () => clearTimeout(id);
+  }, [showToast]);
+
   // --- Keyboard Shortcuts (data-driven registry) ---
 
   useEffect(() => {
@@ -461,6 +472,10 @@ function App() {
     setRecentFiles([]);
   }, []);
 
+  const handleCheckUpdates = useCallback(() => {
+    void checkForUpdates(showToast, { silent: false });
+  }, [showToast]);
+
   const menuActions = {
     onNew: handleNew,
     onOpen: handleOpen,
@@ -476,6 +491,7 @@ function App() {
     onCopyHtml: handleCopyHtml,
     onOpenRecent: handleOpenRecent,
     onClearRecent: handleClearRecent,
+    onCheckUpdates: handleCheckUpdates,
     recentFiles,
   };
 
