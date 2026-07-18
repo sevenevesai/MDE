@@ -16,6 +16,7 @@ import { copyHtml, exportHtml } from "./export";
 import { buildCopyForAI, cleanAIText } from "./aiTools";
 import { toggleCheckbox, formatTableAtCursor } from "./editor/commands";
 import { saveRecovery, clearRecovery, hasRecoveryData, loadRecovery } from "./recovery";
+import { decideReload, pathKey, FileWatcherManager } from "./fileWatcher";
 import { checkForUpdates } from "./updater";
 
 function App() {
@@ -74,6 +75,100 @@ function App() {
     editorManagerRef.current.setSettings(settings);
     editorManagerRef.current.updateSettings(settings);
   }, [settings]);
+
+  // --- External file changes (desktop): auto-reload clean tabs, flag conflicts ---
+
+  const [conflicts, setConflicts] = useState<ReadonlySet<string>>(new Set());
+  const conflictToastedRef = useRef(new Set<string>());
+  const fileWatcherRef = useRef<FileWatcherManager | null>(null);
+
+  const clearConflict = useCallback((tabId: string) => {
+    conflictToastedRef.current.delete(tabId);
+    setConflicts((prev) => {
+      if (!prev.has(tabId)) return prev;
+      const next = new Set(prev);
+      next.delete(tabId);
+      return next;
+    });
+  }, []);
+
+  const applyDiskReload = useCallback((tab: DocTab, diskContent: string) => {
+    // Managers first, then dispatch — same order as handleOpen, so EditorArea's
+    // external-load detection sees editors already in sync and does no extra work.
+    editorManagerRef.current.setContent(tab.id, diskContent);
+    void milkdownManagerRef.current.setContent(tab.id, diskContent);
+    dispatch({ type: "REPLACE_TAB", tabId: tab.id, patch: { content: diskContent, savedContent: diskContent } });
+    clearConflict(tab.id);
+  }, [dispatch, clearConflict]);
+
+  const reconcileFile = useCallback(async (path: string) => {
+    const key = pathKey(path);
+    const affected = getState().tabs.filter((t) => t.filePath && pathKey(t.filePath) === key);
+    if (affected.length === 0) return;
+
+    let diskContent: string;
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      diskContent = await readTextFile(path);
+    } catch {
+      // Deleted or unreadable: keep the buffer; a later save recreates the file.
+      return;
+    }
+
+    for (const tab of affected) {
+      // The store lags CodeMirror by a 100ms debounce — consult the live editor
+      // content when the store looks clean, so keystrokes racing an external
+      // write become a conflict instead of being silently reloaded over.
+      const cmContent = editorManagerRef.current.getContent(tab.id);
+      const content = isModified(tab) ? tab.content : (cmContent ?? tab.content);
+      const decision = decideReload(diskContent, { content, savedContent: tab.savedContent });
+
+      if (decision === "reload") {
+        applyDiskReload(tab, diskContent);
+        showToast(`"${tab.title}" reloaded — file changed on disk`, "info");
+      } else if (decision === "conflict") {
+        if (!conflictToastedRef.current.has(tab.id)) {
+          conflictToastedRef.current.add(tab.id);
+          showToast(`"${tab.title}" changed on disk and has unsaved edits`, "error");
+        }
+        setConflicts((prev) => (prev.has(tab.id) ? prev : new Set(prev).add(tab.id)));
+      } else {
+        // Disk went back to the saved baseline — any earlier conflict is moot.
+        clearConflict(tab.id);
+      }
+    }
+  }, [getState, applyDiskReload, clearConflict, showToast]);
+
+  const reconcileRef = useRef(reconcileFile);
+  reconcileRef.current = reconcileFile;
+
+  const watchedPathsKey = tabs.map((t) => t.filePath).filter(Boolean).sort().join("\n");
+  useEffect(() => {
+    if (!isTauri) return;
+    const mgr = (fileWatcherRef.current ??= new FileWatcherManager((p) => void reconcileRef.current(p)));
+    void mgr.sync(getState().tabs.map((t) => t.filePath).filter((p): p is string => p !== null));
+  }, [watchedPathsKey, getState]);
+
+  useEffect(() => () => { fileWatcherRef.current?.dispose(); }, []);
+
+  const handleConflictReload = useCallback(async () => {
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+    const tab = currentTabs.find((t) => t.id === currentActiveId);
+    if (!tab?.filePath) return;
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const diskContent = await readTextFile(tab.filePath);
+      applyDiskReload(tab, diskContent);
+      showToast(`"${tab.title}" reloaded from disk`, "info");
+    } catch (err) {
+      showToast(`Failed to reload: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [getState, applyDiskReload, showToast]);
+
+  const handleConflictKeep = useCallback(() => {
+    clearConflict(getState().activeTabId);
+    showToast("Keeping your version — saving will overwrite the file on disk", "info");
+  }, [getState, clearConflict]);
 
   // --- Crash Recovery ---
 
@@ -215,8 +310,9 @@ function App() {
 
     editorManagerRef.current.removeEditor(id);
     milkdownManagerRef.current.removeEditor(id);
+    clearConflict(id);
     dispatch({ type: "REMOVE_TAB", id });
-  }, [dispatch, getState]);
+  }, [dispatch, getState, clearConflict]);
 
   // --- Window close handler ---
 
@@ -559,6 +655,25 @@ function App() {
         onCloseTab={handleCloseTab}
       />
       {mode === "raw" && <Toolbar getView={getActiveView} />}
+      {conflicts.has(activeTab.id) && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/60 text-xs text-text-primary">
+          <span className="flex-1 truncate">
+            "{activeTab.title}" changed on disk — you also have unsaved edits.
+          </span>
+          <button
+            onClick={handleConflictReload}
+            className="shrink-0 px-2 py-0.5 rounded border border-yellow-700/60 hover:bg-bg-hover transition-colors"
+          >
+            Reload from disk
+          </button>
+          <button
+            onClick={handleConflictKeep}
+            className="shrink-0 px-2 py-0.5 rounded border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            Keep my version
+          </button>
+        </div>
+      )}
       <EditorArea
         activeTabId={activeTab.id}
         initialContent={activeTab.content}
