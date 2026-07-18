@@ -97,7 +97,7 @@ export default function Toolbar({ getView }: ToolbarProps) {
       <ToolbarButton label="S" title="Strikethrough (Ctrl+Shift+X)" onClick={() => exec(toggleStrikethrough)} />
       <ToolbarButton label="<>" title="Inline Code (Ctrl+`)" onClick={() => exec(toggleInlineCode)} />
       <Separator />
-      <ToolbarButton label="🔗" title="Link (Ctrl+K)" onClick={() => exec(insertLink)} />
+      <ToolbarButton label="🔗" title="Link (Ctrl+Shift+L)" onClick={() => exec(insertLink)} />
       <ToolbarButton label="🖼" title="Image (Ctrl+Shift+K)" onClick={() => exec(insertImage)} />
       <Separator />
       <ToolbarButton label="•" title="Bullet List (Ctrl+Shift+8)" onClick={() => exec(toggleBulletList)} />

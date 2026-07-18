@@ -65,6 +65,7 @@ function Menu({ label, items, isOpen, onToggle, onHover, anyOpen }: MenuProps) {
 
 export interface MenuActions {
   onNew: () => void;
+  onCommandPalette: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -151,6 +152,8 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
   ];
 
   const editItems: MenuEntry[] = [
+    { label: "Command Palette…", shortcut: "Ctrl+K", action: () => act(actions.onCommandPalette) },
+    { separator: true },
     { label: "Toggle Mode", shortcut: "Ctrl+E", action: () => act(actions.onToggleMode) },
     { label: "Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: () => act(actions.onToggleWrap) },
     { separator: true },

@@ -10,6 +10,8 @@ import { openFile, saveFile, saveFileAs, basename, confirmUnsaved } from "./file
 import { isTauri } from "./platform";
 import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSettings, loadRecentFiles, addRecentFile, clearRecentFiles } from "./settings";
 import { useToast, ToastContainer } from "./components/Toast";
+import CommandPalette from "./components/CommandPalette";
+import type { PaletteCommand } from "./commandPalette";
 import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
 import { handleShortcuts, type Shortcut } from "./shortcuts";
 import { copyHtml, exportHtml } from "./export";
@@ -24,6 +26,7 @@ function App() {
   const { tabs, activeTabId } = state;
 
   const [mode, setMode] = useState<EditorMode>("raw");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0, charCount: 0 });
   const [settings, setSettings] = useState<EditorSettings>(loadSettings);
   const [recentFiles, setRecentFiles] = useState<string[]>(loadRecentFiles);
@@ -487,10 +490,19 @@ function App() {
     }
   }, [activeTab.filePath, activeTab.title, activeTab.content, showToast]);
 
+  // --- Command Palette ---
+
+  const handlePaletteClose = useCallback(() => {
+    setPaletteOpen(false);
+    // The palette input stole focus — hand it back to the editor.
+    editorManagerRef.current.getActiveView()?.focus();
+  }, []);
+
   // --- Keyboard Shortcuts (data-driven registry) ---
 
   useEffect(() => {
     const shortcuts: Shortcut[] = [
+      { key: "k", ctrl: true, action: () => setPaletteOpen((o) => !o) },
       { key: "n", ctrl: true, action: handleNew },
       { key: "o", ctrl: true, action: handleOpen },
       { key: "S", ctrl: true, shift: true, action: handleSaveAs },
@@ -607,8 +619,36 @@ function App() {
     }
   }, [getActiveView, showToast]);
 
+  const paletteCommands: PaletteCommand[] = [
+    { id: "new", title: "File: New", shortcut: "Ctrl+N", action: handleNew },
+    { id: "open", title: "File: Open…", shortcut: "Ctrl+O", action: handleOpen },
+    { id: "save", title: "File: Save", shortcut: "Ctrl+S", action: handleSave },
+    { id: "save-as", title: "File: Save As…", shortcut: "Ctrl+Shift+S", action: handleSaveAs },
+    { id: "close-tab", title: "File: Close Tab", shortcut: "Ctrl+W", action: () => handleCloseTab(getState().activeTabId) },
+    { id: "export-html", title: "File: Export HTML…", action: handleExportHtml },
+    { id: "toggle-mode", title: "View: Toggle Raw/Visual Mode", shortcut: "Ctrl+E", action: handleToggleMode },
+    { id: "toggle-wrap", title: "View: Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: handleToggleWrap },
+    { id: "font-up", title: "View: Increase Font Size", shortcut: "Ctrl+=", action: handleFontSizeUp },
+    { id: "font-down", title: "View: Decrease Font Size", shortcut: "Ctrl+-", action: handleFontSizeDown },
+    { id: "font-reset", title: "View: Reset Font Size", shortcut: "Ctrl+0", action: handleFontSizeReset },
+    { id: "copy-html", title: "Edit: Copy as HTML", action: handleCopyHtml },
+    { id: "copy-ai", title: "AI: Copy for AI", shortcut: "Ctrl+Shift+A", action: handleCopyForAI },
+    { id: "clean-paste", title: "AI: Clean AI Paste", action: handleCleanPaste },
+    { id: "checkbox", title: "Edit: Toggle Checkbox", shortcut: "Ctrl+Shift+9", action: handleToggleCheckbox },
+    { id: "format-table", title: "Edit: Format Table", action: handleFormatTable },
+    ...(isTauri
+      ? [{ id: "updates", title: "Help: Check for Updates…", action: handleCheckUpdates }]
+      : []),
+    ...recentFiles.map((p) => ({
+      id: `recent:${p}`,
+      title: `Open Recent: ${basename(p)}`,
+      action: () => handleOpenRecent(p),
+    })),
+  ];
+
   const menuActions = {
     onNew: handleNew,
+    onCommandPalette: () => setPaletteOpen(true),
     onOpen: handleOpen,
     onSave: handleSave,
     onSaveAs: handleSaveAs,
@@ -679,6 +719,7 @@ function App() {
         onToggleWrap={handleToggleWrap}
         fontSize={settings.fontSize}
       />
+      <CommandPalette open={paletteOpen} commands={paletteCommands} onClose={handlePaletteClose} />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

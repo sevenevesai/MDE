@@ -156,7 +156,8 @@ export class EditorManager {
         { key: "Mod-i", run: toggleItalic },
         { key: "Mod-Shift-x", run: toggleStrikethrough },
         { key: "Mod-`", run: toggleInlineCode },
-        { key: "Mod-k", run: insertLink },
+        // Ctrl+K belongs to the app-level command palette.
+        { key: "Mod-Shift-l", run: insertLink },
         { key: "Mod-Shift-k", run: insertImage },
         { key: "Mod-Shift-8", run: toggleBulletList },
         { key: "Mod-Shift-7", run: toggleOrderedList },
