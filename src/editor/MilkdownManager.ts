@@ -49,12 +49,19 @@ export class MilkdownManager {
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private creating = new Map<string, Promise<Crepe>>();
-  /** Tabs where onChange is suppressed (initial normalization pass). */
+  /** Tabs where onChange is suppressed (programmatic create/replace pass). */
   private suppressChange = new Set<string>();
   /** Tracks whether the user actually edited content in visual mode. */
   private userEdited = new Set<string>();
   /** The original content passed to Milkdown for each tab. */
   private originalContent = new Map<string, string>();
+  /**
+   * Milkdown's own serialization of the original content. Normalization passes
+   * can fire markdownUpdated at any time after creation, so telling user edits
+   * apart needs a content compare, not a timing window: an event whose markdown
+   * equals this baseline is the unchanged document, not an edit.
+   */
+  private normalizedOriginal = new Map<string, string>();
 
   attach(container: HTMLElement) {
     this.container = container;
@@ -134,15 +141,34 @@ export class MilkdownManager {
 
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown, prevMarkdown) => {
-        if (markdown !== prevMarkdown && !this.suppressChange.has(tabId)) {
-          this.userEdited.add(tabId);
-          this.onChangeRef.current?.(tabId, markdown);
+        if (markdown === prevMarkdown) return;
+        if (this.suppressChange.has(tabId)) {
+          // Programmatic pass (create/replaceAll) — record it as the baseline.
+          this.normalizedOriginal.set(tabId, markdown);
+          return;
         }
+        if (markdown === this.normalizedOriginal.get(tabId)) {
+          // Document matches the as-loaded state: a late normalization pass,
+          // or the user undid their edits. Restore the pristine original so
+          // the tab never goes "modified" from serialization differences.
+          this.userEdited.delete(tabId);
+          const original = this.originalContent.get(tabId);
+          if (original !== undefined) this.onChangeRef.current?.(tabId, original);
+          return;
+        }
+        this.userEdited.add(tabId);
+        this.onChangeRef.current?.(tabId, markdown);
       });
     });
 
     await crepe.create();
     this.editors.set(tabId, crepe);
+
+    try {
+      this.normalizedOriginal.set(tabId, crepe.getMarkdown());
+    } catch {
+      // Editor not measurable yet — the suppressed pass above captured it.
+    }
 
     // Allow onChange after a tick (normalization is done by now)
     requestAnimationFrame(() => this.suppressChange.delete(tabId));
@@ -189,7 +215,18 @@ export class MilkdownManager {
       try {
         // Milkdown is already loaded if an editor exists, so this resolves synchronously.
         const { replaceAll } = await loadMilkdown();
+        // A programmatic replace is not a user edit: suppress the resulting
+        // markdownUpdated event and re-baseline, same as on creation.
+        this.suppressChange.add(tabId);
+        this.userEdited.delete(tabId);
+        this.originalContent.set(tabId, markdown);
         existing.editor.action(replaceAll(markdown));
+        try {
+          this.normalizedOriginal.set(tabId, existing.getMarkdown());
+        } catch {
+          // The suppressed pass above captured the baseline.
+        }
+        requestAnimationFrame(() => this.suppressChange.delete(tabId));
         return;
       } catch {
         // replaceAll failed — fall back to destroy/recreate
@@ -237,6 +274,7 @@ export class MilkdownManager {
     }
     this.userEdited.delete(tabId);
     this.originalContent.delete(tabId);
+    this.normalizedOriginal.delete(tabId);
     this.suppressChange.delete(tabId);
     const wrapper = this.wrappers.get(tabId);
     if (wrapper) {
