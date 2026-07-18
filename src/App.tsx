@@ -15,7 +15,7 @@ import { handleShortcuts, type Shortcut } from "./shortcuts";
 import { copyHtml, exportHtml } from "./export";
 import { buildCopyForAI, cleanAIText } from "./aiTools";
 import { toggleCheckbox, formatTableAtCursor } from "./editor/commands";
-import { saveRecovery, clearRecovery, hasRecoveryData, loadRecovery } from "./recovery";
+import { saveSession, loadSession } from "./session";
 import { decideReload, pathKey, FileWatcherManager } from "./fileWatcher";
 import { checkForUpdates } from "./updater";
 
@@ -170,37 +170,35 @@ function App() {
     showToast("Keeping your version — saving will overwrite the file on disk", "info");
   }, [getState, clearConflict]);
 
-  // --- Crash Recovery ---
+  // --- Session persistence (hot exit) ---
 
-  // On mount: check for recovery data from a previous crash
+  // On mount: restore the previous session's tabs — no prompts. Covers both
+  // clean exit (exact snapshot) and crash (last 10s autosave).
   useEffect(() => {
-    if (!hasRecoveryData()) return;
-    const data = loadRecovery();
-    if (!data) return;
+    const session = loadSession();
+    if (!session) return;
+    dispatch({ type: "SET_TABS", tabs: session.tabs });
+    const active = session.tabs.some((t) => t.id === session.activeTabId)
+      ? session.activeTabId
+      : session.tabs[0].id;
+    dispatch({ type: "SET_ACTIVE", id: active });
 
-    const unsavedCount = data.tabs.filter((t) => t.content !== t.savedContent).length;
-    const doRestore = window.confirm(
-      `MDE found ${unsavedCount} unsaved document${unsavedCount > 1 ? "s" : ""} from a previous session. Restore them?`
-    );
-
-    if (doRestore) {
-      dispatch({ type: "SET_TABS", tabs: data.tabs });
-      dispatch({ type: "SET_ACTIVE", id: data.activeTabId });
-      showToast(`Restored ${unsavedCount} unsaved document${unsavedCount > 1 ? "s" : ""}`, "info");
+    // Files may have changed on disk while the app was closed — run the same
+    // reconcile as a live watch event, after React commits the restored tabs.
+    if (isTauri) {
+      setTimeout(() => {
+        for (const t of session.tabs) {
+          if (t.filePath) void reconcileRef.current(t.filePath);
+        }
+      }, 0);
     }
-    clearRecovery();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Periodically save recovery data (every 10s)
+  // Autosave the session every 10s (crash safety).
   useEffect(() => {
     const interval = setInterval(() => {
       const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
-      const hasUnsaved = currentTabs.some((t) => t.content !== t.savedContent);
-      if (hasUnsaved) {
-        saveRecovery(currentTabs, currentActiveId);
-      } else {
-        clearRecovery();
-      }
+      saveSession(currentTabs, currentActiveId);
     }, 10_000);
     return () => clearInterval(interval);
   }, [getState]);
@@ -321,35 +319,22 @@ function App() {
       let unlisten: (() => void) | null = null;
       import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
         const appWindow = getCurrentWindow();
-        appWindow.onCloseRequested(async (event) => {
-          const unsavedTabs = getState().tabs.filter(isModified);
-          if (unsavedTabs.length === 0) {
-            clearRecovery();
-            return;
-          }
-
-          event.preventDefault();
-
-          for (const tab of unsavedTabs) {
-            const action = await confirmUnsaved(tab.title);
-            if (action === "save") {
-              if (tab.filePath) {
-                await saveFile(tab.filePath, tab.content);
-              } else {
-                const path = await saveFileAs(tab.content, tab.title);
-                if (!path) return;
-              }
-            }
-          }
-
-          clearRecovery();
-          await appWindow.destroy();
+        appWindow.onCloseRequested(() => {
+          // Hot exit: persist everything, prompt for nothing. Dirty buffers
+          // come back on the next launch via session restore.
+          const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+          saveSession(currentTabs, currentActiveId);
         }).then((fn) => { unlisten = fn; });
       });
       return () => { unlisten?.(); };
     } else {
       const handler = (e: BeforeUnloadEvent) => {
-        if (getState().tabs.some(isModified)) {
+        // Browsers can close without a final autosave tick — snapshot now.
+        // The dirty prompt stays: browser file handles don't survive reload,
+        // so a restored dirty tab can't save back to its original file.
+        const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+        saveSession(currentTabs, currentActiveId);
+        if (currentTabs.some(isModified)) {
           e.preventDefault();
         }
       };
