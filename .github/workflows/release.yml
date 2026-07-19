@@ -1,5 +1,33 @@
 name: Release
 
+# Tag v* → build installers on 4 targets, attach them + a merged latest.json
+# to one GitHub release, then publish the website. The desktop auto-updater
+# reads latest.json from GitHub releases — the site carries the browser build
+# and the landing page's direct-download installer mirrors.
+#
+#   verify     — version consistency (package.json / tauri.conf.json /
+#                Cargo.toml / the tag) before anything builds.
+#   windows    — SELF-HOSTED runner `mde-win` (the dev PC, S:\actions-runner-mde,
+#                labels [self-hosted, mde-windows], auto-started at logon via
+#                Startup\github-runner-mde.vbs; manual start: run.cmd there).
+#                0 billed minutes and a warm src-tauri/target between runs
+#                (checkout clean: false; stale bundles removed explicitly so
+#                artifact globs can't match old installers). Toolchain is the
+#                machine's (node system-wide, rustup/cargo in the user profile
+#                — the runner runs in the user's context, NOT as a service).
+#                The PC must be on when a tag is pushed; a queued job waits
+#                for the runner and resumes when it reconnects — it is not lost.
+#   hosted     — macOS arm64 + x64 and Linux on GitHub-hosted runners.
+#   deploy-web — self-hosted again: builds the browser bundle and runs
+#                scripts/deploy-web.mjs (web app + installer mirrors + landing
+#                page version, uploaded via the machine's `seveneves` SSH
+#                alias — no deploy secrets in GitHub).
+#
+# Public repo + self-hosted runner: fork-PR workflows require approval for
+# ALL outside collaborators (repo Actions setting, set 2026-07-19) so PR code
+# can never reach the runner unreviewed. This workflow triggers only on tags,
+# which only maintainers can push.
+
 on:
   push:
     tags:
@@ -9,13 +37,82 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  verify:
+    name: Verify versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          CARGO=$(grep -m1 -E '^version = ' src-tauri/Cargo.toml | cut -d'"' -f2)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$PKG" != "$TAURI" || "$PKG" != "$CARGO" || "$PKG" != "$TAG_VERSION" ]]; then
+            echo "::error::version mismatch — tag=$TAG_VERSION package.json=$PKG tauri.conf.json=$TAURI Cargo.toml=$CARGO"
+            exit 1
+          fi
+
+  windows:
+    name: Build Windows x64
+    needs: verify
+    # Self-hosted (see header). No setup-node/rust/cache steps: the machine
+    # toolchain is the same one local `npm run tauri build` uses, and the
+    # persistent work dir IS the cache.
+    runs-on: [self-hosted, mde-windows]
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Clean stale bundles
+        run: if (Test-Path src-tauri/target/release/bundle) { Remove-Item -Recurse -Force src-tauri/target/release/bundle }
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update artifacts and generates the detached signatures that
+          # latest.json references. Key has no password (empty string).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "MDE ${{ github.ref_name }}"
+          # Publish latest.json alongside the installers so the in-app updater can find it.
+          includeUpdaterJson: true
+          releaseBody: |
+            Lightweight markdown editor built with Tauri 2 + React + CodeMirror 6 + Milkdown.
+
+            ## Features
+            - Raw markdown editing with syntax highlighting and minimap
+            - WYSIWYG visual mode with rich text toolbar
+            - Multiple tabs with persistent undo history
+            - File open/save with native dialogs
+            - Formatting toolbar and keyboard shortcuts
+            - Word wrap and font size controls
+            - Dark theme
+
+            ## Install
+            - **Windows**: Download `.msi` or `.exe` installer
+            - **macOS**: Download `.dmg`
+            - **Linux**: Download `.deb` or `.AppImage`
+          releaseDraft: false
+          prerelease: false
+
+  hosted:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            args: ""
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
           - platform: macos-latest
@@ -66,6 +163,8 @@ jobs:
           releaseName: "MDE ${{ github.ref_name }}"
           # Publish latest.json alongside the installers so the in-app updater can find it.
           includeUpdaterJson: true
+          # Duplicated in the windows job on purpose: whichever build job runs
+          # first creates the release, and the body is only used at creation.
           releaseBody: |
             Lightweight markdown editor built with Tauri 2 + React + CodeMirror 6 + Milkdown.
 
@@ -85,3 +184,26 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  deploy-web:
+    name: Deploy site
+    needs: [windows, hosted]
+    runs-on: [self-hosted, mde-windows]
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      # The windows job just ran npm ci in this same persistent work dir;
+      # reinstall only if a rerun starts from a fresh runner.
+      - name: Install npm dependencies (if missing)
+        run: if (-not (Test-Path node_modules)) { npm ci }
+
+      - name: Build web bundle
+        run: npm run build:web
+
+      - name: Publish site (web app + installer mirrors + landing version)
+        run: node scripts/deploy-web.mjs
