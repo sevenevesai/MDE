@@ -52,9 +52,9 @@ export default function CommandPalette({ open, commands, onClose }: CommandPalet
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40" onMouseDown={onClose}>
+    <div className="backdrop-enter fixed inset-0 z-[60] bg-black/40" onMouseDown={onClose}>
       <div
-        className="mx-auto mt-[12vh] w-[520px] max-w-[90vw] bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden"
+        className="palette-enter mx-auto mt-[12vh] w-[520px] max-w-[90vw] bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input

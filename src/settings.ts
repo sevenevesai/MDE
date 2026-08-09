@@ -5,6 +5,8 @@ export interface EditorSettings {
   fontSize: number; // px
   /** Raw-mode heading outline sidebar. */
   showOutline: boolean;
+  /** Idle auto-save to disk (Tauri only). */
+  autoSave: boolean;
 }
 
 const STORAGE_KEY = "mde-settings";
@@ -13,6 +15,7 @@ const DEFAULTS: EditorSettings = {
   wordWrap: true,
   fontSize: 14,
   showOutline: false,
+  autoSave: false,
 };
 
 export function loadSettings(): EditorSettings {

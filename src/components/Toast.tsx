@@ -74,7 +74,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
 
   return (
     <div
-      className={`px-4 py-2.5 rounded border text-xs text-text-primary shadow-lg flex items-start gap-2 ${bg}`}
+      className={`toast-enter px-4 py-2.5 rounded border text-xs text-text-primary shadow-lg flex items-start gap-2 ${bg}`}
     >
       <span className="flex-1">{toast.text}</span>
       {toast.action && (

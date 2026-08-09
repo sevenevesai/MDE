@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorManager, type CursorInfo } from "../editor/EditorManager";
 import { MilkdownManager } from "../editor/MilkdownManager";
 
@@ -12,6 +12,8 @@ interface EditorAreaProps {
   onCursorChange: (info: CursorInfo) => void;
   editorManagerRef: React.MutableRefObject<EditorManager>;
   milkdownManagerRef: React.MutableRefObject<MilkdownManager>;
+  /** --- SLEEK: rendered above the editor containers (e.g. the empty-tab overlay). */
+  overlay?: React.ReactNode;
 }
 
 export default function EditorArea({
@@ -22,6 +24,7 @@ export default function EditorArea({
   onCursorChange,
   editorManagerRef,
   milkdownManagerRef,
+  overlay,
 }: EditorAreaProps) {
   const cmContainerRef = useRef<HTMLDivElement>(null);
   const mdContainerRef = useRef<HTMLDivElement>(null);
@@ -29,6 +32,11 @@ export default function EditorArea({
   const prevModeRef = useRef(mode);
   const prevTabIdRef = useRef(activeTabId);
   const prevContentRef = useRef(initialContent);
+
+  // --- SLEEK: mode-toggle crossfade. Bumped only when `modeChanged` below is
+  // true (a rare user action, not per-keystroke) — a fresh key remounts the
+  // overlay div so its CSS animation restarts.
+  const [modeFadeKey, setModeFadeKey] = useState(0);
 
   // Attach managers on mount
   useEffect(() => {
@@ -100,6 +108,9 @@ export default function EditorArea({
         await mdMgr.activate(activeTabId, content);
       })();
     }
+
+    // --- SLEEK: crossfade the newly-shown container on a mode switch only.
+    if (modeChanged) setModeFadeKey((k) => k + 1);
   }, [activeTabId, initialContent, mode, editorManagerRef, milkdownManagerRef]);
 
   return (
@@ -116,6 +127,11 @@ export default function EditorArea({
         className="h-full w-full absolute inset-0 overflow-auto"
         style={{ display: mode === "visual" ? "block" : "none" }}
       />
+      {/* --- SLEEK: mode-toggle crossfade scrim — remounted via key, never touches the editor containers above */}
+      {modeFadeKey > 0 && (
+        <div key={modeFadeKey} className="mode-fade-overlay absolute inset-0 bg-bg-primary pointer-events-none" />
+      )}
+      {overlay}
     </div>
   );
 }

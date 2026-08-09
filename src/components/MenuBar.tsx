@@ -38,7 +38,7 @@ function Menu({ label, items, isOpen, onToggle, onHover, anyOpen }: MenuProps) {
         {label}
       </button>
       {isOpen && (
-        <div className="absolute top-full left-0 mt-0 flex flex-col bg-bg-secondary border border-border rounded-b shadow-lg z-50 py-1 min-w-[200px]">
+        <div className="menu-enter absolute top-full left-0 mt-0 flex flex-col bg-bg-secondary border border-border rounded-b shadow-lg z-50 py-1 min-w-[200px]">
           {items.map((item, i) =>
             item.separator ? (
               <div key={i} className="h-px bg-border mx-2 my-1" />
@@ -86,6 +86,8 @@ export interface MenuActions {
   onCheckUpdates: () => void;
   recentFiles: string[];
   onToggleOutline: () => void; // RAWNAV
+  autoSave: boolean; // SLEEK
+  onToggleAutoSave: () => void; // SLEEK
 }
 
 export default function MenuBar({ actions }: { actions: MenuActions }) {
@@ -169,6 +171,11 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     { label: "Increase Font Size", shortcut: "Ctrl+=", action: () => act(actions.onFontSizeUp) },
     { label: "Decrease Font Size", shortcut: "Ctrl+-", action: () => act(actions.onFontSizeDown) },
     { label: "Reset Font Size", shortcut: "Ctrl+0", action: () => act(actions.onFontSizeReset) },
+    // --- SLEEK ---
+    ...(isTauri
+      ? [{ separator: true as const }, { label: `Auto-Save: ${actions.autoSave ? "On" : "Off"}`, action: () => act(actions.onToggleAutoSave) }]
+      : []),
+    // --- /SLEEK ---
   ];
 
   // "Check for Updates" only exists in the desktop app.

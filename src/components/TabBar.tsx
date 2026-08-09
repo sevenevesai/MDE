@@ -26,7 +26,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: T
                 onCloseTab(tab.id);
               }
             }}
-            className={`group flex items-center gap-2 h-full px-4 cursor-pointer border-r border-border text-sm transition-colors ${
+            className={`group flex items-center gap-2 h-full px-4 cursor-pointer border-r border-border text-sm transition-colors duration-150 ${
               isActive
                 ? "bg-bg-secondary text-text-primary border-t-2 border-t-accent"
                 : "text-text-secondary hover:bg-bg-tertiary"
@@ -41,7 +41,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: T
                 e.stopPropagation();
                 onCloseTab(tab.id);
               }}
-              className="ml-1 opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary transition-opacity"
+              className="ml-1 opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary hover:scale-110 transition duration-150"
             >
               <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2">
                 <line x1="1" y1="1" x2="7" y2="7" />

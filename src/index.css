@@ -49,3 +49,56 @@ html, body, #root {
 ::selection {
   background-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
+
+/* --- SLEEK: micro-transitions --- */
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.toast-enter {
+  animation: toast-in 150ms ease-out;
+}
+
+@keyframes palette-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+.palette-enter {
+  animation: palette-in 120ms ease-out;
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.backdrop-enter {
+  animation: backdrop-in 120ms ease-out;
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.menu-enter {
+  animation: menu-in 100ms ease-out;
+}
+
+@keyframes mode-fade-overlay-anim {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.mode-fade-overlay {
+  animation: mode-fade-overlay-anim 130ms ease-out forwards;
+}
+
+/* Disable all CSS animations/transitions for users who ask for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* --- /SLEEK --- */

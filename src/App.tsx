@@ -28,6 +28,11 @@ import { canDiffUnsaved, type DiffMode } from "./editor/diffView";
 import OutlineSidebar from "./components/OutlineSidebar";
 import type { OutlineItem } from "./outline";
 // --- /RAWNAV ---
+// --- SLEEK ---
+import EmptyState from "./components/EmptyState";
+import { shouldShowEmptyState } from "./emptyState";
+import { selectAutoSaveTargets } from "./autosave";
+// --- /SLEEK ---
 
 function App() {
   const { state, dispatch, getState, activeTab } = useDocumentStore();
@@ -81,6 +86,12 @@ function App() {
   const handleFontSizeReset = useCallback(() => {
     updateSettings({ fontSize: 14 });
   }, [updateSettings]);
+
+  // --- SLEEK ---
+  const handleToggleAutoSave = useCallback(() => {
+    updateSettings({ autoSave: !settings.autoSave });
+  }, [settings.autoSave, updateSettings]);
+  // --- /SLEEK ---
 
   useEffect(() => {
     editorManagerRef.current.setSettings(settings);
@@ -253,6 +264,66 @@ function App() {
   }, [showToast]);
 
   // --- /DIFFWATCH ---
+
+  // --- SLEEK: idle auto-save to disk (Tauri only) ---
+
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const conflictsRef = useRef(conflicts);
+  conflictsRef.current = conflicts;
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const runAutoSave = useCallback(async () => {
+    const { tabs: currentTabs } = getState();
+    const candidates = currentTabs.map((t) => ({
+      id: t.id,
+      filePath: t.filePath,
+      content: liveContent(t),
+      savedContent: t.savedContent,
+    }));
+    const targets = selectAutoSaveTargets(candidates, conflictsRef.current, settingsRef.current.autoSave);
+    for (const target of targets) {
+      try {
+        const ok = await saveFile(target.filePath, target.content);
+        if (ok) {
+          dispatch({ type: "MARK_SAVED", tabId: target.id });
+        } else {
+          showToast(`Auto-save failed for "${basename(target.filePath)}"`, "error", undefined, `autosave:${pathKey(target.filePath)}`);
+        }
+      } catch (err) {
+        showToast(`Auto-save failed: ${err instanceof Error ? err.message : String(err)}`, "error", undefined, `autosave:${pathKey(target.filePath)}`);
+      }
+    }
+  }, [getState, liveContent, dispatch, showToast]);
+
+  // Piggybacks on the existing 100ms content-sync debounce (handleContentChange
+  // already only fires post-debounce) — this just resets one timer, no
+  // per-keystroke work of its own.
+  const scheduleAutoSave = useCallback(() => {
+    if (!isTauri) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (!settingsRef.current.autoSave) return;
+    autoSaveTimerRef.current = setTimeout(() => { void runAutoSave(); }, 1500);
+  }, [runAutoSave]);
+
+  // Toggling auto-save off cancels any pending save immediately.
+  useEffect(() => {
+    if (!settings.autoSave && autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+  }, [settings.autoSave]);
+
+  useEffect(() => () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+  }, []);
+
+  const handleEditorContentChange = useCallback((tabId: string, value: string) => {
+    handleContentChange(tabId, value);
+    scheduleAutoSave();
+  }, [handleContentChange, scheduleAutoSave]);
+
+  // --- /SLEEK ---
 
   // --- Session persistence (hot exit) ---
 
@@ -741,6 +812,11 @@ function App() {
     // --- RAWNAV ---
     { id: "toggle-outline", title: "View: Toggle Outline Sidebar (raw mode)", shortcut: "Ctrl+Shift+O", action: handleToggleOutline },
     // --- /RAWNAV ---
+    // --- SLEEK ---
+    ...(isTauri
+      ? [{ id: "toggle-autosave", title: "Settings: Toggle Auto-Save", action: handleToggleAutoSave }]
+      : []),
+    // --- /SLEEK ---
   ];
 
   const menuActions = {
@@ -768,7 +844,15 @@ function App() {
     // --- RAWNAV ---
     onToggleOutline: handleToggleOutline,
     // --- /RAWNAV ---
+    // --- SLEEK ---
+    autoSave: settings.autoSave,
+    onToggleAutoSave: handleToggleAutoSave,
+    // --- /SLEEK ---
   };
+
+  // --- SLEEK ---
+  const showEmptyState = shouldShowEmptyState(activeTab);
+  // --- /SLEEK ---
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary">
@@ -813,10 +897,11 @@ function App() {
           activeTabId={activeTab.id}
           initialContent={activeTab.content}
           mode={mode}
-          onChange={handleContentChange}
+          onChange={handleEditorContentChange}
           onCursorChange={setCursorInfo}
           editorManagerRef={editorManagerRef}
           milkdownManagerRef={milkdownManagerRef}
+          overlay={showEmptyState && <EmptyState recentFiles={recentFiles} onOpenRecent={handleOpenRecent} />}
         />
         {outlineVisible && <OutlineSidebar items={outline} onJump={handleOutlineJump} />}
       </div>

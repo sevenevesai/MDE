@@ -115,7 +115,7 @@ export class EditorManager {
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private onOutlineRef: { current: OutlineCallback | null } = { current: null };
-  private settings: EditorSettings = { wordWrap: true, fontSize: 14, showOutline: false };
+  private settings: EditorSettings = { wordWrap: true, fontSize: 14, showOutline: false, autoSave: false };
   private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
   private contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private lastWordCount = 0;
