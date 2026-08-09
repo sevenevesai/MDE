@@ -24,6 +24,10 @@ import { checkForUpdates } from "./updater";
 import DiffOverlay from "./components/DiffOverlay";
 import { canDiffUnsaved, type DiffMode } from "./editor/diffView";
 // --- /DIFFWATCH ---
+// --- RAWNAV ---
+import OutlineSidebar from "./components/OutlineSidebar";
+import type { OutlineItem } from "./outline";
+// --- /RAWNAV ---
 
 function App() {
   const { state, dispatch, getState, activeTab } = useDocumentStore();
@@ -82,6 +86,38 @@ function App() {
     editorManagerRef.current.setSettings(settings);
     editorManagerRef.current.updateSettings(settings);
   }, [settings]);
+
+  // --- RAWNAV --- outline sidebar (raw mode only)
+
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
+
+  const handleToggleOutline = useCallback(() => {
+    const next = !settings.showOutline;
+    updateSettings({ showOutline: next });
+    if (next && mode === "visual") {
+      showToast("Outline is available in raw mode", "info");
+    }
+  }, [settings.showOutline, updateSettings, mode, showToast]);
+
+  const handleOutlineJump = useCallback((item: OutlineItem) => {
+    editorManagerRef.current.jumpTo(item.from);
+  }, []);
+
+  // Subscribing emits the current outline; unsubscribing stops the manager
+  // computing it at all, so a hidden sidebar costs nothing on the stats path.
+  const outlineVisible = settings.showOutline && mode === "raw";
+  useEffect(() => {
+    const mgr = editorManagerRef.current;
+    if (!outlineVisible) {
+      mgr.setOnOutlineChange(null);
+      setOutline([]);
+      return;
+    }
+    mgr.setOnOutlineChange(setOutline);
+    return () => mgr.setOnOutlineChange(null);
+  }, [outlineVisible, activeTabId]);
+
+  // --- /RAWNAV ---
 
   // --- External file changes (desktop): auto-reload clean tabs, flag conflicts ---
 
@@ -564,6 +600,9 @@ function App() {
       // --- DIFFWATCH --- (Ctrl+Shift+D: free in this registry and in the CM6 keymap)
       { key: "D", ctrl: true, shift: true, action: handleDiffUnsaved },
       // --- /DIFFWATCH ---
+      // --- RAWNAV ---
+      { key: "O", ctrl: true, shift: true, action: handleToggleOutline },
+      // --- /RAWNAV ---
     ];
 
     const handler = (e: KeyboardEvent) => handleShortcuts(shortcuts, e);
@@ -572,7 +611,8 @@ function App() {
   }, [handleNew, handleOpen, handleSave, handleSaveAs, handleCloseTab, handleToggleMode,
       handleCopyForAI, handleToggleWrap, handleFontSizeUp, handleFontSizeDown,
       handleFontSizeReset, getState,
-      handleDiffUnsaved /* --- DIFFWATCH --- */]);
+      handleDiffUnsaved /* --- DIFFWATCH --- */,
+      handleToggleOutline /* RAWNAV */]);
 
   const getActiveView = useCallback(
     () => editorManagerRef.current.getActiveView(),
@@ -698,6 +738,9 @@ function App() {
       ? [{ id: "diff-unsaved", title: "Diff: Unsaved Changes vs Disk", shortcut: "Ctrl+Shift+D", action: handleDiffUnsaved }]
       : []),
     // --- /DIFFWATCH ---
+    // --- RAWNAV ---
+    { id: "toggle-outline", title: "View: Toggle Outline Sidebar (raw mode)", shortcut: "Ctrl+Shift+O", action: handleToggleOutline },
+    // --- /RAWNAV ---
   ];
 
   const menuActions = {
@@ -722,6 +765,9 @@ function App() {
     onClearRecent: handleClearRecent,
     onCheckUpdates: handleCheckUpdates,
     recentFiles,
+    // --- RAWNAV ---
+    onToggleOutline: handleToggleOutline,
+    // --- /RAWNAV ---
   };
 
   return (
@@ -761,15 +807,20 @@ function App() {
           {/* --- /DIFFWATCH --- */}
         </div>
       )}
-      <EditorArea
-        activeTabId={activeTab.id}
-        initialContent={activeTab.content}
-        mode={mode}
-        onChange={handleContentChange}
-        onCursorChange={setCursorInfo}
-        editorManagerRef={editorManagerRef}
-        milkdownManagerRef={milkdownManagerRef}
-      />
+      {/* --- RAWNAV --- row wrapper so the outline sidebar sits beside the editor */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <EditorArea
+          activeTabId={activeTab.id}
+          initialContent={activeTab.content}
+          mode={mode}
+          onChange={handleContentChange}
+          onCursorChange={setCursorInfo}
+          editorManagerRef={editorManagerRef}
+          milkdownManagerRef={milkdownManagerRef}
+        />
+        {outlineVisible && <OutlineSidebar items={outline} onJump={handleOutlineJump} />}
+      </div>
+      {/* --- /RAWNAV --- */}
       <StatusBar
         line={cursorInfo.line}
         column={cursorInfo.column}

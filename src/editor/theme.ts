@@ -1,5 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { yamlLanguage } from "@codemirror/lang-yaml";
 import { tags } from "@lezer/highlight";
 
 /**
@@ -192,8 +193,9 @@ export const mdeHighlightStyle = syntaxHighlighting(
     // Separators (---)
     { tag: tags.separator, color: "#30363d" },
 
-    // Meta / processing instructions (front matter, etc.)
-    { tag: tags.meta, color: "#d2a8ff" },
+    // Meta — the `---` delimiters around YAML frontmatter. Muted: they are
+    // structure, not content.
+    { tag: tags.meta, color: "#6e7681" },
     { tag: tags.processingInstruction, color: "#d2a8ff" },
 
     // Markup punctuation (# for headings, ** for bold, etc.)
@@ -219,4 +221,24 @@ export const mdeHighlightStyle = syntaxHighlighting(
     { tag: tags.null, color: "#79c0ff" },
     { tag: tags.function(tags.variableName), color: "#d2a8ff" },
   ])
+);
+
+/**
+ * YAML frontmatter, scoped to the yaml sub-language so it cannot bleed into the
+ * markdown body. Frontmatter is metadata about the document rather than part of
+ * it, so it reads quieter than body text: structural blue keys, muted values.
+ * (Without this, yaml's `: ,` separators would inherit the document-level
+ * separator color — nearly invisible against the editor background.)
+ */
+export const mdeFrontmatterHighlight = syntaxHighlighting(
+  HighlightStyle.define(
+    [
+      { tag: tags.definition(tags.propertyName), color: "#79c0ff" },
+      { tag: [tags.content, tags.string, tags.number, tags.bool, tags.null], color: "#8b949e" },
+      { tag: tags.separator, color: "#6e7681" },
+      { tag: tags.labelName, color: "#8b949e" },
+      { tag: tags.lineComment, color: "#484f58", fontStyle: "italic" },
+    ],
+    { scope: yamlLanguage }
+  )
 );

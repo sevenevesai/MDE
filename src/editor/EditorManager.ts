@@ -18,6 +18,7 @@ import {
   toggleBlockquote, insertCodeBlock, setHeading, toggleCheckbox,
 } from "./commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import { languages } from "@codemirror/language-data";
 import {
   bracketMatching,
@@ -34,7 +35,9 @@ import {
 } from "@codemirror/autocomplete";
 import { lintKeymap } from "@codemirror/lint";
 import { showMinimap } from "@replit/codemirror-minimap";
-import { mdeEditorTheme, mdeHighlightStyle } from "./theme";
+import { mdeEditorTheme, mdeHighlightStyle, mdeFrontmatterHighlight } from "./theme";
+import { frontmatterFold } from "./frontmatterFold";
+import { extractOutline, type OutlineItem } from "../outline";
 import type { EditorSettings } from "../settings";
 import { perf } from "../perf";
 
@@ -47,6 +50,7 @@ export interface CursorInfo {
 
 type ChangeCallback = (tabId: string, doc: string) => void;
 type CursorCallback = (info: CursorInfo) => void;
+type OutlineCallback = (items: OutlineItem[]) => void;
 
 function createMinimapDom(): { dom: HTMLElement } {
   return { dom: document.createElement("div") };
@@ -69,6 +73,20 @@ function countLines(doc: string): number {
   }
   return lines;
 }
+
+/**
+ * Raw-mode language stack. Leading `---` frontmatter is parsed as YAML and the
+ * rest as markdown; yamlFrontmatter passes the markdown support extensions
+ * through, so lang-markdown's heading-section fold service survives the
+ * wrapping. `frontmatterFold` adds the one range neither language provides.
+ * Exported so tests can exercise the exact configuration the editor runs.
+ */
+export const rawLanguage = [
+  yamlFrontmatter({
+    content: markdown({ base: markdownLanguage, codeLanguages: languages }),
+  }),
+  frontmatterFold,
+];
 
 function minimapExtension() {
   return showMinimap.compute([], () => ({
@@ -96,7 +114,8 @@ export class EditorManager {
   private activeId: string | null = null;
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
-  private settings: EditorSettings = { wordWrap: true, fontSize: 14 };
+  private onOutlineRef: { current: OutlineCallback | null } = { current: null };
+  private settings: EditorSettings = { wordWrap: true, fontSize: 14, showOutline: false };
   private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
   private contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private lastWordCount = 0;
@@ -122,6 +141,36 @@ export class EditorManager {
 
   setOnCursorChange(cb: CursorCallback) {
     this.onCursorRef.current = cb;
+  }
+
+  /**
+   * Subscribe to heading-outline updates, or pass null to unsubscribe. With no
+   * listener attached the outline is never computed. Subscribing emits the
+   * active document's outline immediately.
+   */
+  setOnOutlineChange(cb: OutlineCallback | null) {
+    this.onOutlineRef.current = cb;
+    if (!cb) return;
+    const view = this.getActiveView();
+    if (view) cb(extractOutline(view.state.doc.toString()));
+  }
+
+  private emitOutline(doc: string) {
+    const cb = this.onOutlineRef.current;
+    if (!cb) return;
+    cb(extractOutline(doc));
+  }
+
+  /** Move the cursor to `pos`, scroll it to the top of the viewport and focus. */
+  jumpTo(pos: number) {
+    const view = this.getActiveView();
+    if (!view) return;
+    const target = Math.max(0, Math.min(pos, view.state.doc.length));
+    view.dispatch({
+      selection: EditorSelection.cursor(target),
+      effects: EditorView.scrollIntoView(target, { y: "start", yMargin: 24 }),
+    });
+    view.focus();
   }
 
   setSettings(settings: EditorSettings) {
@@ -177,9 +226,10 @@ export class EditorManager {
         ...lintKeymap,
         indentWithTab,
       ]),
-      markdown({ base: markdownLanguage, codeLanguages: languages }),
+      rawLanguage,
       mdeEditorTheme,
       mdeHighlightStyle,
+      mdeFrontmatterHighlight,
       // Minimap, disabled above MINIMAP_MAX_LINES for typing performance.
       minimapComp.of(minimapFor(initialDoc)),
       // Dynamic compartments
@@ -218,6 +268,8 @@ export class EditorManager {
                 wordCount: this.lastWordCount,
                 charCount: this.lastCharCount,
               });
+              // The outline rides the same debounce — never per keystroke.
+              this.emitOutline(text);
             }, 250);
           }
         }
@@ -294,6 +346,7 @@ export class EditorManager {
         wordCount: this.lastWordCount,
         charCount: this.lastCharCount,
       });
+      this.emitOutline(text);
     }
   }
 

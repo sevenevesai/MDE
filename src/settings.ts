@@ -3,6 +3,8 @@
 export interface EditorSettings {
   wordWrap: boolean;
   fontSize: number; // px
+  /** Raw-mode heading outline sidebar. */
+  showOutline: boolean;
 }
 
 const STORAGE_KEY = "mde-settings";
@@ -10,6 +12,7 @@ const STORAGE_KEY = "mde-settings";
 const DEFAULTS: EditorSettings = {
   wordWrap: true,
   fontSize: 14,
+  showOutline: false,
 };
 
 export function loadSettings(): EditorSettings {

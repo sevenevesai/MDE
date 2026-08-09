@@ -85,6 +85,7 @@ export interface MenuActions {
   onClearRecent: () => void;
   onCheckUpdates: () => void;
   recentFiles: string[];
+  onToggleOutline: () => void; // RAWNAV
 }
 
 export default function MenuBar({ actions }: { actions: MenuActions }) {
@@ -156,6 +157,7 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     { separator: true },
     { label: "Toggle Mode", shortcut: "Ctrl+E", action: () => act(actions.onToggleMode) },
     { label: "Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: () => act(actions.onToggleWrap) },
+    { label: "Toggle Outline", shortcut: "Ctrl+Shift+O", action: () => act(actions.onToggleOutline) }, // RAWNAV
     { separator: true },
     { label: "Copy as HTML", action: () => act(actions.onCopyHtml) },
     { separator: true },
