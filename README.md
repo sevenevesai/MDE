@@ -19,6 +19,11 @@ Installers for Windows, macOS, and Linux: [Releases](https://github.com/seveneve
 - **Settings** — word wrap, font size, persisted across sessions
 - **Drag and drop** — drop `.md` files onto the window
 - **Diff view** — side-by-side comparison of your unsaved buffer against the file on disk (`Ctrl+Shift+D`). When an agent or another editor rewrites a file you have unsaved edits in, the conflict bar offers "View diff" before you decide to reload or keep your version.
+- **Command palette** — every action plus recent files, fuzzy-matched (`Ctrl+K`)
+- **YAML frontmatter** — highlighted and foldable in raw mode
+- **Outline sidebar** — headings with click-to-jump (`Ctrl+Shift+O`), plus foldable heading sections in raw mode
+- **Mermaid diagrams** — ```` ```mermaid ```` fences render as diagrams in visual mode (rendered lazily; zero cost until a diagram appears)
+- **Auto-save** — optional idle save-to-disk toggle (desktop)
 
 ## Keyboard Shortcuts
 
@@ -32,7 +37,9 @@ Installers for Windows, macOS, and Linux: [Releases](https://github.com/seveneve
 | `Ctrl+E` | Toggle raw/visual mode |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
-| `Ctrl+K` | Insert link |
+| `Ctrl+K` | Command palette |
+| `Ctrl+Shift+L` | Insert link |
+| `Ctrl+Shift+O` | Toggle outline sidebar |
 | `Ctrl+1`–`4` | Heading 1–4 |
 | `Ctrl+=` / `Ctrl+-` | Font size |
 | `Ctrl+Alt+W` | Toggle word wrap |
