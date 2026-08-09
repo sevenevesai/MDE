@@ -116,10 +116,33 @@ export class MilkdownManager {
   }
 
   private async buildEditor(tabId: string, wrapper: HTMLElement, doc: string): Promise<Crepe> {
-    const { Crepe, CrepeFeature } = await loadMilkdown();
+    // mermaidRenderer is only ever reachable from visual mode, so it rides the
+    // same lazy boundary as Milkdown rather than sitting in the startup chunk.
+    const [{ Crepe, CrepeFeature }, mermaid] = await Promise.all([
+      loadMilkdown(),
+      import("./mermaidRenderer"),
+    ]);
+
+    // Start fetching the mermaid chunk now so a document full of diagrams does
+    // not wait for a second serial round trip. No fence, no request.
+    if (mermaid.hasMermaidFence(doc)) {
+      void mermaid.loadMermaid().catch(() => { /* the render path reports failures */ });
+    }
+
     const crepe = new Crepe({
       root: wrapper,
       defaultValue: doc,
+      featureConfigs: {
+        [CrepeFeature.CodeMirror]: {
+          // Draws ```mermaid fences as diagrams in the code block's preview
+          // panel. Every other language returns null and stays a code block.
+          renderPreview: mermaid.renderMermaidPreview,
+          previewLabel: "Diagram",
+          // Only blocks that produced a preview (i.e. mermaid) are affected —
+          // they open as the rendered diagram, with a toggle back to source.
+          previewOnlyByDefault: true,
+        },
+      },
       features: {
         [CrepeFeature.Toolbar]: true,
         [CrepeFeature.LinkTooltip]: true,

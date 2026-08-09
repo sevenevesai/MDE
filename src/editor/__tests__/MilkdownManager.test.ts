@@ -120,3 +120,47 @@ describe("MilkdownManager normalization vs user edits", () => {
     expect(mgr.getContentForRawSync("t1")).toBe(DOC);
   });
 });
+
+/**
+ * Clicking a task checkbox in visual mode is a ProseMirror transaction like any
+ * other: it reaches MilkdownManager as a markdownUpdated event whose only delta
+ * is `[ ]` → `[x]`. The normalizedOriginal baseline must NOT absorb it, or the
+ * tab would stay clean and raw mode would never see the toggle.
+ */
+describe("MilkdownManager checkbox toggles", () => {
+  const TASKS = "# Todo\n\n* [ ] first\n* [x] second\n";
+
+  it("checking a box propagates as a user edit and syncs back to raw", async () => {
+    const { mgr, onChange } = await makeManager();
+    await mgr.activate("t1", TASKS);
+    expect(onChange).not.toHaveBeenCalled();
+
+    const checked = TASKS.replace("* [ ] first", "* [x] first");
+    h.instances[0].fire(checked);
+
+    expect(onChange).toHaveBeenLastCalledWith("t1", checked);
+    expect(mgr.getContentForRawSync("t1")).toBe(checked);
+  });
+
+  it("unchecking a box that was checked on load is also a user edit", async () => {
+    const { mgr, onChange } = await makeManager();
+    await mgr.activate("t1", TASKS);
+
+    const unchecked = TASKS.replace("* [x] second", "* [ ] second");
+    h.instances[0].fire(unchecked);
+
+    expect(onChange).toHaveBeenLastCalledWith("t1", unchecked);
+    expect(mgr.getContentForRawSync("t1")).toBe(unchecked);
+  });
+
+  it("toggling a box back restores the pristine document, not a dirty tab", async () => {
+    const { mgr, onChange } = await makeManager();
+    await mgr.activate("t1", TASKS);
+
+    h.instances[0].fire(TASKS.replace("* [ ] first", "* [x] first"));
+    h.instances[0].fire(TASKS); // clicked it again
+
+    expect(onChange).toHaveBeenLastCalledWith("t1", TASKS);
+    expect(mgr.getContentForRawSync("t1")).toBe(TASKS);
+  });
+});
