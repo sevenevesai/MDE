@@ -20,6 +20,10 @@ import { toggleCheckbox, formatTableAtCursor } from "./editor/commands";
 import { saveSession, loadSession } from "./session";
 import { decideReload, pathKey, FileWatcherManager } from "./fileWatcher";
 import { checkForUpdates } from "./updater";
+// --- DIFFWATCH ---
+import DiffOverlay from "./components/DiffOverlay";
+import { canDiffUnsaved, type DiffMode } from "./editor/diffView";
+// --- /DIFFWATCH ---
 
 function App() {
   const { state, dispatch, getState, activeTab } = useDocumentStore();
@@ -128,7 +132,9 @@ function App() {
 
       if (decision === "reload") {
         applyDiskReload(tab, diskContent);
-        showToast(`"${tab.title}" reloaded — file changed on disk`, "info");
+        // --- DIFFWATCH: keyed per file so an agent rewriting it repeatedly
+        // replaces the live toast instead of stacking a new one each time. ---
+        showToast(`"${tab.title}" reloaded — file changed on disk`, "info", undefined, `reload:${key}`);
       } else if (decision === "conflict") {
         if (!conflictToastedRef.current.has(tab.id)) {
           conflictToastedRef.current.add(tab.id);
@@ -172,6 +178,45 @@ function App() {
     clearConflict(getState().activeTabId);
     showToast("Keeping your version — saving will overwrite the file on disk", "info");
   }, [getState, clearConflict]);
+
+  // --- DIFFWATCH: diff overlay (buffer vs disk / vs last save) ---
+
+  const [diff, setDiff] = useState<{ mode: DiffMode; title: string; left: string; right: string } | null>(null);
+
+  const closeDiff = useCallback(() => setDiff(null), []);
+
+  /** Freshest buffer text: the store lags CodeMirror by the 100ms debounce. */
+  const liveContent = useCallback((tab: DocTab) => {
+    return editorManagerRef.current.getContent(tab.id) ?? tab.content;
+  }, []);
+
+  const handleDiffUnsaved = useCallback(() => {
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+    const tab = currentTabs.find((t) => t.id === currentActiveId);
+    if (!tab) return;
+    setDiff({ mode: "unsaved", title: tab.title, left: tab.savedContent, right: liveContent(tab) });
+  }, [getState, liveContent]);
+
+  const handleDiffConflict = useCallback(async () => {
+    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
+    const tab = currentTabs.find((t) => t.id === currentActiveId);
+    if (!tab?.filePath) return;
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const diskContent = await readTextFile(tab.filePath);
+      setDiff({ mode: "conflict", title: tab.title, left: diskContent, right: liveContent(tab) });
+    } catch (err) {
+      // Overlay stays closed — a diff against nothing would be a lie.
+      showToast(`Failed to read file for diff: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [getState, liveContent, showToast]);
+
+  const handleDiffError = useCallback((message: string) => {
+    setDiff(null);
+    showToast(message, "error");
+  }, [showToast]);
+
+  // --- /DIFFWATCH ---
 
   // --- Session persistence (hot exit) ---
 
@@ -516,6 +561,9 @@ function App() {
       { key: "+", ctrl: true, action: handleFontSizeUp },
       { key: "-", ctrl: true, action: handleFontSizeDown },
       { key: "0", ctrl: true, action: handleFontSizeReset },
+      // --- DIFFWATCH --- (Ctrl+Shift+D: free in this registry and in the CM6 keymap)
+      { key: "D", ctrl: true, shift: true, action: handleDiffUnsaved },
+      // --- /DIFFWATCH ---
     ];
 
     const handler = (e: KeyboardEvent) => handleShortcuts(shortcuts, e);
@@ -523,7 +571,8 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [handleNew, handleOpen, handleSave, handleSaveAs, handleCloseTab, handleToggleMode,
       handleCopyForAI, handleToggleWrap, handleFontSizeUp, handleFontSizeDown,
-      handleFontSizeReset, getState]);
+      handleFontSizeReset, getState,
+      handleDiffUnsaved /* --- DIFFWATCH --- */]);
 
   const getActiveView = useCallback(
     () => editorManagerRef.current.getActiveView(),
@@ -644,6 +693,11 @@ function App() {
       title: `Open Recent: ${basename(p)}`,
       action: () => handleOpenRecent(p),
     })),
+    // --- DIFFWATCH ---
+    ...(canDiffUnsaved(activeTab)
+      ? [{ id: "diff-unsaved", title: "Diff: Unsaved Changes vs Disk", shortcut: "Ctrl+Shift+D", action: handleDiffUnsaved }]
+      : []),
+    // --- /DIFFWATCH ---
   ];
 
   const menuActions = {
@@ -697,6 +751,14 @@ function App() {
           >
             Keep my version
           </button>
+          {/* --- DIFFWATCH --- */}
+          <button
+            onClick={handleDiffConflict}
+            className="shrink-0 px-2 py-0.5 rounded border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            View diff
+          </button>
+          {/* --- /DIFFWATCH --- */}
         </div>
       )}
       <EditorArea
@@ -719,6 +781,20 @@ function App() {
         onToggleWrap={handleToggleWrap}
         fontSize={settings.fontSize}
       />
+      {/* --- DIFFWATCH --- */}
+      {diff && (
+        <DiffOverlay
+          mode={diff.mode}
+          title={diff.title}
+          left={diff.left}
+          right={diff.right}
+          onClose={closeDiff}
+          onTakeDisk={handleConflictReload}
+          onKeepMine={handleConflictKeep}
+          onError={handleDiffError}
+        />
+      )}
+      {/* --- /DIFFWATCH --- */}
       <CommandPalette open={paletteOpen} commands={paletteCommands} onClose={handlePaletteClose} />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>

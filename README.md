@@ -18,6 +18,7 @@ Installers for Windows, macOS, and Linux: [Releases](https://github.com/seveneve
 - **Single instance** — new files open as tabs, not new windows
 - **Settings** — word wrap, font size, persisted across sessions
 - **Drag and drop** — drop `.md` files onto the window
+- **Diff view** — side-by-side comparison of your unsaved buffer against the file on disk (`Ctrl+Shift+D`). When an agent or another editor rewrites a file you have unsaved edits in, the conflict bar offers "View diff" before you decide to reload or keep your version.
 
 ## Keyboard Shortcuts
 
@@ -35,6 +36,7 @@ Installers for Windows, macOS, and Linux: [Releases](https://github.com/seveneve
 | `Ctrl+1`–`4` | Heading 1–4 |
 | `Ctrl+=` / `Ctrl+-` | Font size |
 | `Ctrl+Alt+W` | Toggle word wrap |
+| `Ctrl+Shift+D` | Diff unsaved changes vs disk |
 
 ## Tech Stack
 

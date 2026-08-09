@@ -11,6 +11,11 @@ export interface ToastMessage {
   kind: "error" | "info";
   /** Optional action button. Toasts with an action never auto-dismiss. */
   action?: ToastAction;
+  /**
+   * Coalescing key. A new toast with the same key replaces the live one instead
+   * of stacking, so a repeatedly-rewritten file yields one toast, not a pile.
+   */
+  key?: string;
 }
 
 let nextId = 0;
@@ -20,9 +25,13 @@ export function useToast() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const show = useCallback(
-    (text: string, kind: "error" | "info" = "error", action?: ToastAction) => {
+    (text: string, kind: "error" | "info" = "error", action?: ToastAction, key?: string) => {
       const id = nextId++;
-      setToasts((prev) => [...prev, { id, text, kind, action }]);
+      setToasts((prev) => {
+        // The fresh id remounts ToastItem, which restarts the dismiss timer.
+        const rest = key === undefined ? prev : prev.filter((t) => t.key !== key);
+        return [...rest, { id, text, kind, action, key }];
+      });
     },
     []
   );
