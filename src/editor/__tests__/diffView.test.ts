@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canDiffUnsaved, diffPaneLabels, summarizeLineChanges } from "../diffView";
+import { canDiffUnsaved, diffPaneLabels, mountDiffView, summarizeLineChanges } from "../diffView";
 
 describe("summarizeLineChanges", () => {
   it("reports identical documents", () => {
@@ -47,5 +47,21 @@ describe("canDiffUnsaved", () => {
   it("requires a file-backed tab", () => {
     expect(canDiffUnsaved({ filePath: "C:\\notes.md" })).toBe(true);
     expect(canDiffUnsaved({ filePath: null })).toBe(false);
+  });
+});
+
+describe("mountDiffView", () => {
+  it("lazily loads @codemirror/merge and builds two read-only panes", async () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+
+    const mounted = await mountDiffView(parent, "a\nb\nc", "a\nB\nc");
+    expect(parent.querySelector(".cm-mergeView")).not.toBeNull();
+    expect(parent.querySelectorAll(".cm-editor")).toHaveLength(2);
+    expect(parent.querySelectorAll(".cm-content[contenteditable=true]")).toHaveLength(0);
+
+    mounted.destroy();
+    expect(parent.querySelector(".cm-mergeView")).toBeNull();
+    parent.remove();
   });
 });
