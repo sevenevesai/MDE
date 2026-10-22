@@ -89,12 +89,17 @@ export async function saveFileAs(content: string, defaultName?: string): Promise
   return name;
 }
 
-/** Ask user about unsaved changes via confirm() */
-export async function confirmUnsaved(filename: string): Promise<"save" | "discard"> {
-  const result = window.confirm(
-    `"${filename}" has unsaved changes. Click OK to save, or Cancel to discard.`
-  );
-  return result ? "save" : "discard";
+/**
+ * Ask user about unsaved changes via confirm(). The browser has no three-button
+ * dialog, so two prompts: Cancel on the first is a real cancel, not a discard.
+ */
+export async function confirmUnsaved(filename: string): Promise<"save" | "discard" | "cancel"> {
+  if (window.confirm(`"${filename}" has unsaved changes. Click OK to save, or Cancel for more options.`)) {
+    return "save";
+  }
+  return window.confirm(`Discard unsaved changes to "${filename}"? Click Cancel to keep the tab open.`)
+    ? "discard"
+    : "cancel";
 }
 
 /** Helper: trigger a file download */

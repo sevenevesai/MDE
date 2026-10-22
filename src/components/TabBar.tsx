@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { clampToViewport } from "../menuPosition";
 
 interface Tab {
   id: string;
@@ -142,6 +143,16 @@ function TabContextMenu({ x, y, canCloseOthers, onCloseOthers, onCopyPath, onDis
     };
   }, [onDismiss]);
 
+  // Measure after layout and clamp so the menu stays fully inside the window.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setPos(clampToViewport(x, y, width, height, window.innerWidth, window.innerHeight));
+  }, [x, y]);
+
   const item = "w-full text-left px-3 py-1.5 text-sm text-text-primary hover:bg-bg-tertiary disabled:text-text-muted disabled:hover:bg-transparent";
   return (
     <>
@@ -151,8 +162,9 @@ function TabContextMenu({ x, y, canCloseOthers, onCloseOthers, onCopyPath, onDis
         onContextMenu={(e) => { e.preventDefault(); onDismiss(); }}
       />
       <div
+        ref={menuRef}
         className="fixed z-50 min-w-40 py-1 bg-bg-secondary border border-border rounded shadow-lg"
-        style={{ left: x, top: y }}
+        style={pos}
       >
         <button className={item} disabled={!canCloseOthers} onClick={() => { onDismiss(); onCloseOthers(); }}>
           Close Others

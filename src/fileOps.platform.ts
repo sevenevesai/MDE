@@ -11,7 +11,7 @@ type FileOps = {
   openFile: () => Promise<FileResult | null>;
   saveFile: (path: string, content: string) => Promise<boolean>;
   saveFileAs: (content: string, defaultName?: string) => Promise<string | null>;
-  confirmUnsaved: (filename: string) => Promise<"save" | "discard">;
+  confirmUnsaved: (filename: string) => Promise<"save" | "discard" | "cancel">;
 };
 
 let _ops: FileOps | null = null;
@@ -38,6 +38,6 @@ export async function saveFileAs(content: string, defaultName?: string): Promise
   return (await getOps()).saveFileAs(content, defaultName);
 }
 
-export async function confirmUnsaved(filename: string): Promise<"save" | "discard"> {
+export async function confirmUnsaved(filename: string): Promise<"save" | "discard" | "cancel"> {
   return (await getOps()).confirmUnsaved(filename);
 }

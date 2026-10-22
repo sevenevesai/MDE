@@ -207,9 +207,10 @@ function App() {
 
   useEffect(() => () => { fileWatcherRef.current?.dispose(); }, []);
 
-  const handleConflictReload = useCallback(async () => {
-    const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
-    const tab = currentTabs.find((t) => t.id === currentActiveId);
+  // Take the tab id explicitly: the full-window diff can outlive a tab switch,
+  // so "the active tab" is not necessarily the one the user was looking at.
+  const handleConflictReload = useCallback(async (tabId: string) => {
+    const tab = getState().tabs.find((t) => t.id === tabId);
     if (!tab?.filePath) return;
     try {
       const { readTextFile } = await import("@tauri-apps/plugin-fs");
@@ -221,14 +222,14 @@ function App() {
     }
   }, [getState, applyDiskReload, showToast]);
 
-  const handleConflictKeep = useCallback(() => {
-    clearConflict(getState().activeTabId);
+  const handleConflictKeep = useCallback((tabId: string) => {
+    clearConflict(tabId);
     showToast("Keeping your version — saving will overwrite the file on disk", "info");
   }, [getState, clearConflict]);
 
   // --- DIFFWATCH: diff overlay (buffer vs disk / vs last save) ---
 
-  const [diff, setDiff] = useState<{ mode: DiffMode; title: string; left: string; right: string } | null>(null);
+  const [diff, setDiff] = useState<{ tabId: string; mode: DiffMode; title: string; left: string; right: string } | null>(null);
 
   const closeDiff = useCallback(() => setDiff(null), []);
 
@@ -241,7 +242,7 @@ function App() {
     const { tabs: currentTabs, activeTabId: currentActiveId } = getState();
     const tab = currentTabs.find((t) => t.id === currentActiveId);
     if (!tab) return;
-    setDiff({ mode: "unsaved", title: tab.title, left: tab.savedContent, right: liveContent(tab) });
+    setDiff({ tabId: tab.id, mode: "unsaved", title: tab.title, left: tab.savedContent, right: liveContent(tab) });
   }, [getState, liveContent]);
 
   const handleDiffConflict = useCallback(async () => {
@@ -251,7 +252,7 @@ function App() {
     try {
       const { readTextFile } = await import("@tauri-apps/plugin-fs");
       const diskContent = await readTextFile(tab.filePath);
-      setDiff({ mode: "conflict", title: tab.title, left: diskContent, right: liveContent(tab) });
+      setDiff({ tabId: tab.id, mode: "conflict", title: tab.title, left: diskContent, right: liveContent(tab) });
     } catch (err) {
       // Overlay stays closed — a diff against nothing would be a lie.
       showToast(`Failed to read file for diff: ${err instanceof Error ? err.message : String(err)}`, "error");
@@ -445,18 +446,23 @@ function App() {
     }
   }, [dispatch, getState, showToast, trackRecent]);
 
-  const handleCloseTab = useCallback(async (id: string) => {
+  /** Resolves true when the tab was closed, false when the user cancelled or the save failed. */
+  const handleCloseTab = useCallback(async (id: string): Promise<boolean> => {
     const { tabs: currentTabs } = getState();
     const target = currentTabs.find((t) => t.id === id);
 
     if (target && isModified(target)) {
       const action = await confirmUnsaved(target.title);
+      if (action === "cancel") return false;
       if (action === "save") {
         if (target.filePath) {
-          await saveFile(target.filePath, target.content);
+          if (!(await saveFile(target.filePath, target.content))) {
+            showToast(`Failed to save "${target.title}" — tab left open`, "error");
+            return false;
+          }
         } else {
           const path = await saveFileAs(target.content, target.title);
-          if (!path) return;
+          if (!path) return false;
         }
       }
     }
@@ -465,12 +471,13 @@ function App() {
     milkdownManagerRef.current.removeEditor(id);
     clearConflict(id);
     dispatch({ type: "REMOVE_TAB", id });
-  }, [dispatch, getState, clearConflict]);
+    return true;
+  }, [dispatch, getState, clearConflict, showToast]);
 
   const handleCloseOthers = useCallback(async (keepId: string) => {
     dispatch({ type: "SET_ACTIVE", id: keepId });
     for (const t of getState().tabs) {
-      if (t.id !== keepId) await handleCloseTab(t.id);
+      if (t.id !== keepId && !(await handleCloseTab(t.id))) return;
     }
   }, [dispatch, getState, handleCloseTab]);
 
@@ -672,6 +679,9 @@ function App() {
     editorManagerRef.current.getActiveView()?.focus();
   }, []);
 
+  const modalOpenRef = useRef(false);
+  modalOpenRef.current = paletteOpen || diff !== null;
+
   // --- Keyboard Shortcuts (data-driven registry) ---
 
   useEffect(() => {
@@ -703,6 +713,9 @@ function App() {
     ];
 
     const switchTab = (delta: number) => {
+      // A modal surface is up: switching tabs underneath it is invisible (diff)
+      // or steals focus from its input (palette).
+      if (modalOpenRef.current) return;
       const s = getState();
       dispatch({ type: "SET_ACTIVE", id: adjacentTabId(s.tabs, s.activeTabId, delta) });
     };
@@ -905,13 +918,13 @@ function App() {
             "{activeTab.title}" changed on disk — you also have unsaved edits.
           </span>
           <button
-            onClick={handleConflictReload}
+            onClick={() => void handleConflictReload(activeTab.id)}
             className="shrink-0 px-2 py-0.5 rounded border border-yellow-700/60 hover:bg-bg-hover transition-colors"
           >
             Reload from disk
           </button>
           <button
-            onClick={handleConflictKeep}
+            onClick={() => handleConflictKeep(activeTab.id)}
             className="shrink-0 px-2 py-0.5 rounded border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           >
             Keep my version
@@ -960,8 +973,8 @@ function App() {
           left={diff.left}
           right={diff.right}
           onClose={closeDiff}
-          onTakeDisk={handleConflictReload}
-          onKeepMine={handleConflictKeep}
+          onTakeDisk={() => void handleConflictReload(diff.tabId)}
+          onKeepMine={() => handleConflictKeep(diff.tabId)}
           onError={handleDiffError}
         />
       )}

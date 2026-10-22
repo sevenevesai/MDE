@@ -1,4 +1,4 @@
-import { open, save, ask } from "@tauri-apps/plugin-dialog";
+import { open, save, message } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
 export type { FileResult } from "./fileOps.types";
@@ -47,17 +47,18 @@ export async function saveFileAs(content: string, defaultName?: string): Promise
   return path;
 }
 
-/** Ask user about unsaved changes. Returns "save" | "discard" */
-export async function confirmUnsaved(filename: string): Promise<"save" | "discard"> {
-  const result = await ask(
+/** Ask user about unsaved changes. Esc / the window X resolve to "cancel", never "discard". */
+export async function confirmUnsaved(filename: string): Promise<"save" | "discard" | "cancel"> {
+  const result = await message(
     `"${filename}" has unsaved changes. Do you want to save before closing?`,
     {
       title: "Unsaved Changes",
       kind: "warning",
-      okLabel: "Save",
-      cancelLabel: "Don't Save",
+      buttons: { yes: "Save", no: "Don't Save", cancel: "Cancel" },
     }
   );
 
-  return result ? "save" : "discard";
+  if (result === "Save" || result === "Yes") return "save";
+  if (result === "Don't Save" || result === "No") return "discard";
+  return "cancel";
 }

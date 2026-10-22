@@ -220,6 +220,12 @@ export class MilkdownManager {
       crepe = await this.createEditor(tabId, wrapper, initialDoc);
     }
 
+    // Parity with raw mode: a tab switch must leave the caret in the editor,
+    // otherwise typing lands on <body>. Skip if the user moved on mid-await.
+    if (this.activeId === tabId) {
+      wrapper.querySelector<HTMLElement>(".ProseMirror")?.focus();
+    }
+
     // Fire cursor info
     try {
       const text = crepe.getMarkdown();
