@@ -9,11 +9,17 @@ interface TabBarProps {
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onNewTab: () => void;
 }
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: TabBarProps) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTab }: TabBarProps) {
   return (
-    <div className="flex items-end h-9 bg-bg-primary border-b border-border overflow-x-auto shrink-0">
+    <div
+      className="flex items-end h-9 bg-bg-primary border-b border-border overflow-x-auto shrink-0"
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget) onNewTab();
+      }}
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (

@@ -862,6 +862,7 @@ function App() {
         activeTabId={activeTabId}
         onSelectTab={(id) => dispatch({ type: "SET_ACTIVE", id })}
         onCloseTab={handleCloseTab}
+        onNewTab={handleNew}
       />
       {mode === "raw" && <Toolbar getView={getActiveView} />}
       {conflicts.has(activeTab.id) && (
