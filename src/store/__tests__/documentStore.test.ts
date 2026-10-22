@@ -110,6 +110,31 @@ describe("docReducer", () => {
     });
   });
 
+  describe("MOVE_TAB", () => {
+    const three = () => makeState({
+      tabs: [makeTab({ id: "a" }), makeTab({ id: "b" }), makeTab({ id: "c" })],
+      activeTabId: "b",
+    });
+    const ids = (s: DocState) => s.tabs.map((t) => t.id);
+
+    it("moves a tab forward and backward without changing the active tab", () => {
+      expect(ids(docReducer(three(), { type: "MOVE_TAB", id: "a", toIndex: 2 }))).toEqual(["b", "c", "a"]);
+      expect(ids(docReducer(three(), { type: "MOVE_TAB", id: "c", toIndex: 0 }))).toEqual(["c", "a", "b"]);
+      expect(docReducer(three(), { type: "MOVE_TAB", id: "a", toIndex: 2 }).activeTabId).toBe("b");
+    });
+
+    it("clamps an out-of-range index", () => {
+      expect(ids(docReducer(three(), { type: "MOVE_TAB", id: "a", toIndex: 99 }))).toEqual(["b", "c", "a"]);
+      expect(ids(docReducer(three(), { type: "MOVE_TAB", id: "c", toIndex: -5 }))).toEqual(["c", "a", "b"]);
+    });
+
+    it("returns the same state for an unknown id or no-op move", () => {
+      const s = three();
+      expect(docReducer(s, { type: "MOVE_TAB", id: "zzz", toIndex: 0 })).toBe(s);
+      expect(docReducer(s, { type: "MOVE_TAB", id: "b", toIndex: 1 })).toBe(s);
+    });
+  });
+
   describe("SET_ACTIVE", () => {
     it("changes the active tab id", () => {
       const tab1 = makeTab({ id: "tab-1" });

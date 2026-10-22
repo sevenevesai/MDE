@@ -51,6 +51,7 @@ type DocAction =
   | { type: "MARK_SAVED"; tabId: string }
   | { type: "REPLACE_TAB"; tabId: string; patch: Partial<DocTab> }
   | { type: "SET_TABS"; tabs: DocTab[] }
+  | { type: "MOVE_TAB"; id: string; toIndex: number }
   | { type: "REMOVE_TAB"; id: string; replacement?: DocTab }
   | { type: "OPEN_FILE_INTO_CURRENT"; tabId: string; name: string; content: string; path: string };
 
@@ -101,6 +102,17 @@ export function docReducer(state: DocState, action: DocAction): DocState {
             : t
         ),
       };
+
+    case "MOVE_TAB": {
+      const from = state.tabs.findIndex((t) => t.id === action.id);
+      if (from < 0) return state;
+      const to = Math.max(0, Math.min(action.toIndex, state.tabs.length - 1));
+      if (to === from) return state;
+      const tabs = [...state.tabs];
+      const [moved] = tabs.splice(from, 1);
+      tabs.splice(to, 0, moved);
+      return { ...state, tabs };
+    }
 
     case "REMOVE_TAB": {
       if (state.tabs.length <= 1) {

@@ -467,6 +467,28 @@ function App() {
     dispatch({ type: "REMOVE_TAB", id });
   }, [dispatch, getState, clearConflict]);
 
+  const handleCloseOthers = useCallback(async (keepId: string) => {
+    dispatch({ type: "SET_ACTIVE", id: keepId });
+    for (const t of getState().tabs) {
+      if (t.id !== keepId) await handleCloseTab(t.id);
+    }
+  }, [dispatch, getState, handleCloseTab]);
+
+  const handleCopyPath = useCallback(async (id: string) => {
+    const tab = getState().tabs.find((t) => t.id === id);
+    if (!tab) return;
+    if (!tab.filePath) {
+      showToast(`"${tab.title}" is unsaved — no path to copy`, "info");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(tab.filePath);
+      showToast("Path copied", "info");
+    } catch (err) {
+      showToast(`Copy failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [getState, showToast]);
+
   // --- Window close handler ---
 
   useEffect(() => {
@@ -872,6 +894,9 @@ function App() {
         onSelectTab={(id) => dispatch({ type: "SET_ACTIVE", id })}
         onCloseTab={handleCloseTab}
         onNewTab={handleNew}
+        onMoveTab={(id, toIndex) => dispatch({ type: "MOVE_TAB", id, toIndex })}
+        onCloseOthers={handleCloseOthers}
+        onCopyPath={handleCopyPath}
       />
       {mode === "raw" && <Toolbar getView={getActiveView} />}
       {conflicts.has(activeTab.id) && (
