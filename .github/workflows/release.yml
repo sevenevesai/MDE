@@ -5,6 +5,11 @@ name: Release
 # reads latest.json from GitHub releases — the site carries the browser build
 # and the landing page's direct-download installer mirrors.
 #
+# Releases are created as DRAFTS (releaseDraft: true) so nothing reaches the
+# auto-updater until every platform has built; publish the draft by hand, then
+# re-run the deploy-web job (it downloads installers from the public release
+# URL, so it fails on a draft by design, before uploading anything).
+#
 #   verify     — version consistency (package.json / tauri.conf.json /
 #                Cargo.toml / the tag) before anything builds.
 #   windows    — SELF-HOSTED runner `mde-win` (the dev PC, S:\actions-runner-mde,
@@ -104,7 +109,7 @@ jobs:
             - **Windows**: Download `.msi` or `.exe` installer
             - **macOS**: Download `.dmg`
             - **Linux**: Download `.deb` or `.AppImage`
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
 
   hosted:
@@ -181,7 +186,7 @@ jobs:
             - **Windows**: Download `.msi` or `.exe` installer
             - **macOS**: Download `.dmg`
             - **Linux**: Download `.deb` or `.AppImage`
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
