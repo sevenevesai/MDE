@@ -23,6 +23,13 @@ export function isModified(tab: DocTab): boolean {
   return tab.content !== tab.savedContent;
 }
 
+/** Id of the tab `delta` steps from the active one, wrapping around. */
+export function adjacentTabId(tabs: readonly DocTab[], activeId: string, delta: number): string {
+  const idx = tabs.findIndex((t) => t.id === activeId);
+  if (idx < 0 || tabs.length === 0) return activeId;
+  return tabs[(idx + delta + tabs.length) % tabs.length].id;
+}
+
 // --- State ---
 
 export interface DocState {

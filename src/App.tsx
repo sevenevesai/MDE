@@ -12,7 +12,7 @@ import { loadSettings, saveSettings, FONT_SIZE_MIN, FONT_SIZE_MAX, type EditorSe
 import { useToast, ToastContainer } from "./components/Toast";
 import CommandPalette from "./components/CommandPalette";
 import type { PaletteCommand } from "./commandPalette";
-import { useDocumentStore, createNewTab, isModified, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
+import { useDocumentStore, createNewTab, isModified, adjacentTabId, DEFAULT_CONTENT, type DocTab } from "./store/documentStore";
 import { handleShortcuts, type Shortcut } from "./shortcuts";
 import { copyHtml, exportHtml } from "./export";
 import { buildCopyForAI, cleanAIText } from "./aiTools";
@@ -668,6 +668,10 @@ function App() {
       { key: "+", ctrl: true, action: handleFontSizeUp },
       { key: "-", ctrl: true, action: handleFontSizeDown },
       { key: "0", ctrl: true, action: handleFontSizeReset },
+      { key: "Tab", ctrl: true, action: () => switchTab(1) },
+      { key: "Tab", ctrl: true, shift: true, action: () => switchTab(-1) },
+      { key: "PageDown", ctrl: true, action: () => switchTab(1) },
+      { key: "PageUp", ctrl: true, action: () => switchTab(-1) },
       // --- DIFFWATCH --- (Ctrl+Shift+D: free in this registry and in the CM6 keymap)
       { key: "D", ctrl: true, shift: true, action: handleDiffUnsaved },
       // --- /DIFFWATCH ---
@@ -675,6 +679,11 @@ function App() {
       { key: "O", ctrl: true, shift: true, action: handleToggleOutline },
       // --- /RAWNAV ---
     ];
+
+    const switchTab = (delta: number) => {
+      const s = getState();
+      dispatch({ type: "SET_ACTIVE", id: adjacentTabId(s.tabs, s.activeTabId, delta) });
+    };
 
     const handler = (e: KeyboardEvent) => handleShortcuts(shortcuts, e);
     window.addEventListener("keydown", handler);

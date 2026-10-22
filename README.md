@@ -34,6 +34,8 @@ Installers for Windows, macOS, and Linux: [Releases](https://github.com/seveneve
 | `Ctrl+S` | Save |
 | `Ctrl+Shift+S` | Save as |
 | `Ctrl+W` | Close tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous tab |
 | `Ctrl+E` | Toggle raw/visual mode |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |

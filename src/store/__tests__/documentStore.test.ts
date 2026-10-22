@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createNewTab, isModified, docReducer, type DocTab, type DocState } from "../documentStore";
+import { createNewTab, isModified, adjacentTabId, docReducer, type DocTab, type DocState } from "../documentStore";
 
 // ─── Utility Functions ──────────────────────────────────
 
@@ -52,6 +52,26 @@ describe("isModified", () => {
 
   it("returns false for a freshly created tab", () => {
     expect(isModified(createNewTab())).toBe(false);
+  });
+});
+
+describe("adjacentTabId", () => {
+  const tabs = ["a", "b", "c"].map((id) => ({
+    id, title: id, content: "", savedContent: "", filePath: null,
+  }));
+
+  it("moves forward and backward", () => {
+    expect(adjacentTabId(tabs, "a", 1)).toBe("b");
+    expect(adjacentTabId(tabs, "c", -1)).toBe("b");
+  });
+
+  it("wraps at both ends", () => {
+    expect(adjacentTabId(tabs, "c", 1)).toBe("a");
+    expect(adjacentTabId(tabs, "a", -1)).toBe("c");
+  });
+
+  it("returns the active id when it is unknown", () => {
+    expect(adjacentTabId(tabs, "zzz", 1)).toBe("zzz");
   });
 });
 
