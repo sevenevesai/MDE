@@ -11,6 +11,7 @@ import {
   transformLowerCase,
   transformTitleCase,
   trimTrailingWhitespace,
+  countMarkdownHardBreaks,
 } from "../textCommands";
 
 const views: EditorView[] = [];
@@ -152,14 +153,36 @@ describe("joinLines", () => {
     expectSingleUndo(view, doc);
   });
 
-  it("joins the whole document when the selection is empty", () => {
-    const view = makeView("a\nb\nc\n");
-    joinLines(view);
-    expect(docOf(view)).toBe("a b c\n");
+  it("joins the cursor's line with the next and puts the cursor at the join", () => {
+    const view = makeView("a\n   b\nc\n", [[0, 0]]);
+    expect(joinLines(view)).toBe(true);
+    expect(docOf(view)).toBe("a b\nc\n");
+    expect(rangesOf(view)).toEqual([[1, 1]]);
+    expectSingleUndo(view, "a\n   b\nc\n");
   });
 
-  it("does nothing for a selection inside one line", () => {
-    expectNoop(makeView("one two\nthree", [[0, 3]]), joinLines);
+  it("joins at every cursor", () => {
+    const view = makeView("one\ntwo\nthree\nfour", [[1, 1], [9, 9]]);
+    joinLines(view);
+    expect(docOf(view)).toBe("one two\nthree four");
+    expect(rangesOf(view)).toEqual([[3, 3], [13, 13]]);
+  });
+
+  it("joins a line holding a selection with the next", () => {
+    const view = makeView("one two\nthree", [[0, 3]]);
+    joinLines(view);
+    expect(docOf(view)).toBe("one two three");
+  });
+
+  it("does nothing on the last line", () => {
+    expectNoop(makeView("one\ntwo", [[5, 5]]), joinLines);
+  });
+});
+
+describe("countMarkdownHardBreaks", () => {
+  it("counts two-space breaks before a non-blank line only", () => {
+    const view = makeView("one  \ntwo\nthree   \n\nfour \nfive  ");
+    expect(countMarkdownHardBreaks(view.state.doc)).toBe(1);
   });
 });
 

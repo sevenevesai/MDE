@@ -124,17 +124,63 @@ export function uniqueLines(view: EditorView): boolean {
   });
 }
 
+/** Lines joined by single spaces; the first keeps its indentation, blank lines and the whitespace around each break go. */
+function joinedText(lines: readonly string[]): string {
+  const first = lines[0];
+  const indent = first.slice(0, first.length - first.trimStart().length);
+  return indent + lines.map((line) => line.trim()).filter((line) => line).join(" ");
+}
+
+/** A range spanning lines joins them; a cursor, or a range within one line, joins its line with the next. */
+function joinBlocks(state: EditorState): LineBlock[] {
+  const { doc } = state;
+  const blocks: LineBlock[] = [];
+  for (const range of state.selection.ranges) {
+    let block = rangeBlock(doc, range);
+    const last = doc.lineAt(block.to);
+    if (doc.lineAt(block.from).number === last.number) {
+      if (last.number === doc.lines) continue;
+      block = { from: block.from, to: doc.line(last.number + 1).to };
+    }
+    const prev = blocks[blocks.length - 1];
+    if (prev && block.from <= prev.to) blocks[blocks.length - 1] = { from: prev.from, to: Math.max(prev.to, block.to) };
+    else blocks.push(block);
+  }
+  return blocks;
+}
+
 /**
- * Join the lines into one, separated by single spaces. The first line keeps its
- * indentation; blank lines and the whitespace around each break are dropped.
+ * Join lines (Sublime / VS Code "Join Lines"), per selection range: a cursor
+ * joins its line with the next and lands at the join; a range spanning lines
+ * joins them and selects the result.
  */
 export function joinLines(view: EditorView): boolean {
-  return transformLines(view, (lines) => {
-    if (lines.length < 2) return lines;
-    const first = lines[0];
-    const indent = first.slice(0, first.length - first.trimStart().length);
-    return [indent + lines.map((line) => line.trim()).filter((line) => line).join(" ")];
+  const { state } = view;
+  const blocks = joinBlocks(state);
+  if (blocks.length === 0) return false;
+
+  const changes = state.changes(blocks.map((b) => ({
+    from: b.from,
+    to: b.to,
+    insert: joinedText(state.sliceDoc(b.from, b.to).split(state.lineBreak)),
+  })));
+  const ranges = state.selection.ranges.map((range) => {
+    const block = blocks.find((b) => b.from <= range.from && range.from <= b.to);
+    if (!block) return range.map(changes);
+    const start = changes.mapPos(block.from, -1);
+    if (range.empty) {
+      const throughCursorLine = state.sliceDoc(block.from, state.doc.lineAt(range.head).to).split(state.lineBreak);
+      return EditorSelection.cursor(start + joinedText(throughCursorLine).length);
+    }
+    const end = changes.mapPos(block.to, 1);
+    return range.anchor > range.head ? EditorSelection.range(end, start) : EditorSelection.range(start, end);
   });
+  view.dispatch({
+    changes,
+    selection: EditorSelection.create(ranges, state.selection.mainIndex),
+    userEvent: USER_EVENT,
+  });
+  return true;
 }
 
 /** Selected ranges, or the word under each empty cursor; overlaps merged, in document order. */
@@ -197,6 +243,18 @@ export function transformTitleCase(view: EditorView): boolean {
   return transformCase(view, (text) =>
     text.toLowerCase().replace(/(^|[^\p{L}\p{N}'’])(\p{L})/gu, (_match, before: string, letter: string) => before + letter.toUpperCase()),
   );
+}
+
+/**
+ * Markdown hard line breaks in `doc`: lines with text ending in two or more
+ * spaces, followed by a non-blank line. trimTrailingWhitespace removes them.
+ */
+export function countMarkdownHardBreaks(doc: Text): number {
+  let count = 0;
+  for (let n = 1; n < doc.lines; n++) {
+    if (/\S {2,}$/.test(doc.line(n).text) && doc.line(n + 1).text.trim() !== "") count++;
+  }
+  return count;
 }
 
 /** Strip trailing whitespace from every line of the document; cursors stay on their lines. */
