@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import manifestSource from "../../public/manifest.webmanifest?raw";
+import manifestSource from "../../public/manifest.json?raw";
 import {
   looksBinary,
   MARKDOWN_EXTENSIONS,
