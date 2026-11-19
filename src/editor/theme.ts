@@ -143,6 +143,14 @@ export const mdeEditorTheme = EditorView.theme(
         color: "#e6edf3",
       },
     },
+    // Show-whitespace markers: CodeMirror's base theme draws them light grey,
+    // far too loud on this background.
+    ".cm-highlightSpace": {
+      backgroundImage: "radial-gradient(circle at 50% 55%, #6e7681 15%, transparent 5%)",
+    },
+    ".cm-highlightTab": {
+      backgroundImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="20"><path stroke="%23545d68" stroke-width="1" fill="none" d="M1 10H196L190 5M190 15L196 10M197 4L197 16"/></svg>')`,
+    },
     // Minimap container styling
     ".cm-minimap": {
       backgroundColor: "#0d1117",

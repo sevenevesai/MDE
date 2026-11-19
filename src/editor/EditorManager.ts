@@ -1,4 +1,4 @@
-import { EditorState, EditorSelection, Compartment } from "@codemirror/state";
+import { EditorState, EditorSelection, Compartment, type Extension } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -10,23 +10,17 @@ import {
   rectangularSelection,
   crosshairCursor,
   highlightSpecialChars,
+  highlightWhitespace,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
-  toggleBold, toggleItalic, toggleStrikethrough, toggleInlineCode,
-  insertLink, insertImage, toggleBulletList, toggleOrderedList,
-  toggleBlockquote, insertCodeBlock, setHeading, toggleCheckbox,
-} from "./commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { yamlFrontmatter } from "@codemirror/lang-yaml";
-import { languages } from "@codemirror/language-data";
-import {
   bracketMatching,
   indentOnInput,
+  indentUnit,
   foldGutter,
   foldKeymap,
 } from "@codemirror/language";
-import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { searchKeymap, highlightSelectionMatches, gotoLine } from "@codemirror/search";
 import {
   autocompletion,
   completionKeymap,
@@ -35,22 +29,74 @@ import {
 } from "@codemirror/autocomplete";
 import { lintKeymap } from "@codemirror/lint";
 import { showMinimap } from "@replit/codemirror-minimap";
-import { mdeEditorTheme, mdeHighlightStyle, mdeFrontmatterHighlight } from "./theme";
-import { frontmatterFold } from "./frontmatterFold";
+import { mdeEditorTheme, mdeHighlightStyle } from "./theme";
+import {
+  MARKDOWN_LANGUAGE,
+  isMarkdownLanguage,
+  loadLanguageExtension,
+  markdownLanguageExtension,
+} from "./language";
 import { extractOutline, type OutlineItem } from "../outline";
-import type { EditorSettings } from "../settings";
+import { DEFAULTS, type EditorSettings } from "../settings";
 import { perf } from "../perf";
+
+export { rawLanguage } from "./language";
 
 export interface CursorInfo {
   line: number;
   column: number;
   wordCount: number;
   charCount: number;
+  /** Number of selection ranges (1 unless multi-cursor). */
+  selectionCount: number;
+  /** Characters selected, summed over all ranges. */
+  selectionLength: number;
 }
 
 type ChangeCallback = (tabId: string, doc: string) => void;
 type CursorCallback = (info: CursorInfo) => void;
 type OutlineCallback = (items: OutlineItem[]) => void;
+type LanguageErrorCallback = (tabId: string, languageId: string, error: unknown) => void;
+
+/** Per-tab reconfigurable slices of the editor configuration. */
+interface TabCompartments {
+  readonly wrap: Compartment;
+  readonly font: Compartment;
+  readonly minimap: Compartment;
+  readonly language: Compartment;
+  readonly indent: Compartment;
+  readonly whitespace: Compartment;
+}
+
+function newTabCompartments(): TabCompartments {
+  return {
+    wrap: new Compartment(),
+    font: new Compartment(),
+    minimap: new Compartment(),
+    language: new Compartment(),
+    indent: new Compartment(),
+    whitespace: new Compartment(),
+  };
+}
+
+function wrapExtension(settings: EditorSettings): Extension {
+  return settings.wordWrap ? EditorView.lineWrapping : [];
+}
+
+function fontExtension(settings: EditorSettings): Extension {
+  return EditorView.theme({ ".cm-content": { fontSize: `${settings.fontSize}px` } });
+}
+
+function indentExtension(settings: EditorSettings): Extension {
+  return [
+    indentUnit.of(settings.indentWithTabs ? "\t" : " ".repeat(settings.indentSize)),
+    EditorState.tabSize.of(settings.indentSize),
+  ];
+}
+
+function whitespaceExtension(settings: EditorSettings): Extension {
+  return settings.showWhitespace ? highlightWhitespace() : [];
+}
 
 function createMinimapDom(): { dom: HTMLElement } {
   return { dom: document.createElement("div") };
@@ -74,20 +120,6 @@ function countLines(doc: string): number {
   return lines;
 }
 
-/**
- * Raw-mode language stack. Leading `---` frontmatter is parsed as YAML and the
- * rest as markdown; yamlFrontmatter passes the markdown support extensions
- * through, so lang-markdown's heading-section fold service survives the
- * wrapping. `frontmatterFold` adds the one range neither language provides.
- * Exported so tests can exercise the exact configuration the editor runs.
- */
-export const rawLanguage = [
-  yamlFrontmatter({
-    content: markdown({ base: markdownLanguage, codeLanguages: languages }),
-  }),
-  frontmatterFold,
-];
-
 function minimapExtension() {
   return showMinimap.compute([], () => ({
     create: createMinimapDom,
@@ -102,20 +134,21 @@ function minimapFor(doc: string) {
 }
 
 /**
- * Manages a pool of CodeMirror EditorView instances, one per tab.
- * Supports dynamic word wrap and font size via Compartments.
+ * Manages a pool of CodeMirror EditorView instances, one per tab. Settings and
+ * each tab's language are applied through per-tab Compartments.
  */
 export class EditorManager {
   private editors = new Map<string, EditorView>();
-  private wrapCompartments = new Map<string, Compartment>();
-  private fontCompartments = new Map<string, Compartment>();
-  private minimapCompartments = new Map<string, Compartment>();
+  private compartments = new Map<string, TabCompartments>();
+  /** The language most recently requested per tab; a parser load that resolves for any other id is stale. */
+  private languageIds = new Map<string, string>();
   private container: HTMLElement | null = null;
   private activeId: string | null = null;
   private onChangeRef: { current: ChangeCallback | null } = { current: null };
   private onCursorRef: { current: CursorCallback | null } = { current: null };
   private onOutlineRef: { current: OutlineCallback | null } = { current: null };
-  private settings: EditorSettings = { wordWrap: true, fontSize: 14, showOutline: false, autoSave: false };
+  private onLanguageErrorRef: { current: LanguageErrorCallback | null } = { current: null };
+  private settings: EditorSettings = { ...DEFAULTS };
   private wordCountTimer: ReturnType<typeof setTimeout> | null = null;
   private contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private lastWordCount = 0;
@@ -128,9 +161,8 @@ export class EditorManager {
   detach() {
     this.editors.forEach((view) => view.destroy());
     this.editors.clear();
-    this.wrapCompartments.clear();
-    this.fontCompartments.clear();
-    this.minimapCompartments.clear();
+    this.compartments.clear();
+    this.languageIds.clear();
     this.container = null;
     this.activeId = null;
   }
@@ -141,6 +173,31 @@ export class EditorManager {
 
   setOnCursorChange(cb: CursorCallback) {
     this.onCursorRef.current = cb;
+  }
+
+  /**
+   * Called when a language's parser fails to load; the tab keeps its previous
+   * language. Without a listener the failure is logged to the console.
+   */
+  setOnLanguageError(cb: LanguageErrorCallback | null) {
+    this.onLanguageErrorRef.current = cb;
+  }
+
+  /** Selection stats are O(ranges); word/char counts come from the debounced pipeline. */
+  private cursorInfo(state: EditorState): CursorInfo {
+    const { selection } = state;
+    const pos = selection.main.head;
+    const line = state.doc.lineAt(pos);
+    let selectionLength = 0;
+    for (const range of selection.ranges) selectionLength += range.to - range.from;
+    return {
+      line: line.number,
+      column: pos - line.from + 1,
+      wordCount: this.lastWordCount,
+      charCount: this.lastCharCount,
+      selectionCount: selection.ranges.length,
+      selectionLength,
+    };
   }
 
   /**
@@ -179,12 +236,12 @@ export class EditorManager {
 
   private buildExtensions(
     tabId: string,
-    wrapComp: Compartment,
-    fontComp: Compartment,
-    minimapComp: Compartment,
+    compartments: TabCompartments,
     initialDoc: string,
-  ) {
+    languageId: string,
+  ): Extension {
     return [
+      EditorState.allowMultipleSelections.of(true),
       highlightSpecialChars(),
       history(),
       drawSelection(),
@@ -200,23 +257,11 @@ export class EditorManager {
       highlightSelectionMatches(),
       lineNumbers(),
       foldGutter(),
+      // Markdown formatting chords live in the markdown language extension, so
+      // they exist only in markdown tabs.
       keymap.of([
-        { key: "Mod-b", run: toggleBold },
-        { key: "Mod-i", run: toggleItalic },
-        { key: "Mod-Shift-x", run: toggleStrikethrough },
-        { key: "Mod-`", run: toggleInlineCode },
-        // Ctrl+K belongs to the app-level command palette.
-        { key: "Mod-Shift-l", run: insertLink },
-        { key: "Mod-Shift-k", run: insertImage },
-        { key: "Mod-Shift-8", run: toggleBulletList },
-        { key: "Mod-Shift-7", run: toggleOrderedList },
-        { key: "Mod-Shift-9", run: toggleCheckbox },
-        { key: "Mod-Shift-.", run: toggleBlockquote },
-        { key: "Mod-Shift-`", run: insertCodeBlock },
-        { key: "Mod-1", run: (v) => setHeading(v, 1) },
-        { key: "Mod-2", run: (v) => setHeading(v, 2) },
-        { key: "Mod-3", run: (v) => setHeading(v, 3) },
-        { key: "Mod-4", run: (v) => setHeading(v, 4) },
+        // Replaces searchKeymap's Mod-g findNext in the editor (F3 still finds next).
+        { key: "Mod-g", run: gotoLine },
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...searchKeymap,
@@ -226,15 +271,17 @@ export class EditorManager {
         ...lintKeymap,
         indentWithTab,
       ]),
-      rawLanguage,
+      // Non-markdown languages start as plain text until their parser loads.
+      compartments.language.of(isMarkdownLanguage(languageId) ? markdownLanguageExtension : []),
       mdeEditorTheme,
       mdeHighlightStyle,
-      mdeFrontmatterHighlight,
       // Minimap, disabled above MINIMAP_MAX_LINES for typing performance.
-      minimapComp.of(minimapFor(initialDoc)),
-      // Dynamic compartments
-      wrapComp.of(this.settings.wordWrap ? EditorView.lineWrapping : []),
-      fontComp.of(EditorView.theme({ ".cm-content": { fontSize: `${this.settings.fontSize}px` } })),
+      compartments.minimap.of(minimapFor(initialDoc)),
+      // Settings-driven compartments
+      compartments.wrap.of(wrapExtension(this.settings)),
+      compartments.font.of(fontExtension(this.settings)),
+      compartments.indent.of(indentExtension(this.settings)),
+      compartments.whitespace.of(whitespaceExtension(this.settings)),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           // Debounce content sync to React for large file performance
@@ -244,30 +291,18 @@ export class EditorManager {
           }, 100);
         }
         if (update.selectionSet || update.docChanged) {
-          const state = update.state;
-          const pos = state.selection.main.head;
-          const line = state.doc.lineAt(pos);
-
-          // Cursor position is instant; word/char counts are debounced
-          this.onCursorRef.current?.({
-            line: line.number,
-            column: pos - line.from + 1,
-            wordCount: this.lastWordCount,
-            charCount: this.lastCharCount,
-          });
+          // Cursor position and selection stats are instant; word/char counts are debounced
+          this.onCursorRef.current?.(this.cursorInfo(update.state));
 
           if (update.docChanged) {
             if (this.wordCountTimer) clearTimeout(this.wordCountTimer);
             this.wordCountTimer = setTimeout(() => {
-              const text = update.state.doc.toString();
+              // Read the view's current state: the cursor may have moved since this edit.
+              const state = update.view.state;
+              const text = state.doc.toString();
               this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
               this.lastCharCount = text.length;
-              this.onCursorRef.current?.({
-                line: line.number,
-                column: pos - line.from + 1,
-                wordCount: this.lastWordCount,
-                charCount: this.lastCharCount,
-              });
+              this.onCursorRef.current?.(this.cursorInfo(state));
               // The outline rides the same debounce — never per keystroke.
               this.emitOutline(text);
             }, 250);
@@ -281,7 +316,11 @@ export class EditorManager {
     ];
   }
 
-  ensureEditor(tabId: string, initialDoc: string): EditorView {
+  /**
+   * The tab's editor, created on first call. `languageId` applies only at
+   * creation; change an existing tab's language with `setLanguage`.
+   */
+  ensureEditor(tabId: string, initialDoc: string, languageId: string = MARKDOWN_LANGUAGE): EditorView {
     let view = this.editors.get(tabId);
     if (view) return view;
 
@@ -294,26 +333,57 @@ export class EditorManager {
     wrapper.dataset.tabId = tabId;
     this.container.appendChild(wrapper);
 
-    const wrapComp = new Compartment();
-    const fontComp = new Compartment();
-    const minimapComp = new Compartment();
-    this.wrapCompartments.set(tabId, wrapComp);
-    this.fontCompartments.set(tabId, fontComp);
-    this.minimapCompartments.set(tabId, minimapComp);
+    const compartments = newTabCompartments();
+    this.compartments.set(tabId, compartments);
+    this.languageIds.set(tabId, languageId);
 
     const state = EditorState.create({
       doc: initialDoc,
-      extensions: this.buildExtensions(tabId, wrapComp, fontComp, minimapComp, initialDoc),
+      extensions: this.buildExtensions(tabId, compartments, initialDoc, languageId),
     });
 
     view = new EditorView({ state, parent: wrapper });
     this.editors.set(tabId, view);
+    if (!isMarkdownLanguage(languageId)) void this.applyLanguage(tabId, languageId);
     return view;
   }
 
-  activate(tabId: string, initialDoc: string) {
+  /**
+   * Switch a tab's language. Resolves true once applied; false when the tab is
+   * gone, another language was requested before the parser loaded, or the
+   * load failed (reported through `setOnLanguageError`).
+   */
+  setLanguage(tabId: string, languageId: string): Promise<boolean> {
+    if (!this.editors.has(tabId)) return Promise.resolve(false);
+    this.languageIds.set(tabId, languageId);
+    return this.applyLanguage(tabId, languageId);
+  }
+
+  private async applyLanguage(tabId: string, languageId: string): Promise<boolean> {
+    let extension: Extension;
+    try {
+      extension = await loadLanguageExtension(languageId);
+    } catch (error) {
+      if (this.languageIds.get(tabId) === languageId) this.reportLanguageError(tabId, languageId, error);
+      return false;
+    }
+    const view = this.editors.get(tabId);
+    const compartments = this.compartments.get(tabId);
+    if (!view || !compartments || this.languageIds.get(tabId) !== languageId) return false;
+    view.dispatch({ effects: compartments.language.reconfigure(extension) });
+    return true;
+  }
+
+  private reportLanguageError(tabId: string, languageId: string, error: unknown) {
+    const cb = this.onLanguageErrorRef.current;
+    if (cb) cb(tabId, languageId, error);
+    else console.error(`Failed to load the ${languageId} language for tab ${tabId}`, error);
+  }
+
+  /** Show a tab's editor, creating it if needed (`languageId` applies only at creation). */
+  activate(tabId: string, initialDoc: string, languageId: string = MARKDOWN_LANGUAGE) {
     const doneSwitch = perf.tabSwitch(tabId);
-    this.ensureEditor(tabId, initialDoc);
+    this.ensureEditor(tabId, initialDoc, languageId);
 
     if (this.container) {
       for (const child of Array.from(this.container.children) as HTMLElement[]) {
@@ -334,18 +404,10 @@ export class EditorManager {
         doneSwitch();
       });
 
-      const state = view.state;
-      const pos = state.selection.main.head;
-      const line = state.doc.lineAt(pos);
-      const text = state.doc.toString();
+      const text = view.state.doc.toString();
       this.lastWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
       this.lastCharCount = text.length;
-      this.onCursorRef.current?.({
-        line: line.number,
-        column: pos - line.from + 1,
-        wordCount: this.lastWordCount,
-        charCount: this.lastCharCount,
-      });
+      this.onCursorRef.current?.(this.cursorInfo(view.state));
       this.emitOutline(text);
     }
   }
@@ -360,11 +422,11 @@ export class EditorManager {
       const newPos = Math.min(prevPos, content.length);
       // Loading a new document may cross the minimap size threshold — reconfigure
       // in the same transaction so large files never mount the minimap at all.
-      const minimapComp = this.minimapCompartments.get(tabId);
+      const compartments = this.compartments.get(tabId);
       view.dispatch({
         changes: { from: 0, to: current.length, insert: content },
         selection: EditorSelection.single(newPos),
-        effects: minimapComp ? minimapComp.reconfigure(minimapFor(content)) : [],
+        effects: compartments ? compartments.minimap.reconfigure(minimapFor(content)) : [],
       });
     }
   }
@@ -376,9 +438,8 @@ export class EditorManager {
       view.destroy();
       wrapper?.remove();
       this.editors.delete(tabId);
-      this.wrapCompartments.delete(tabId);
-      this.fontCompartments.delete(tabId);
-      this.minimapCompartments.delete(tabId);
+      this.compartments.delete(tabId);
+      this.languageIds.delete(tabId);
     }
   }
 
@@ -395,22 +456,20 @@ export class EditorManager {
     return this.editors.get(this.activeId) ?? null;
   }
 
-  /** Reconfigure word wrap and font size across all editors. */
+  /** Reconfigure wrap, font size, indentation and whitespace markers across all editors. */
   updateSettings(settings: EditorSettings) {
     this.settings = settings;
     this.editors.forEach((view, tabId) => {
-      const wrapComp = this.wrapCompartments.get(tabId);
-      const fontComp = this.fontCompartments.get(tabId);
-      if (wrapComp && fontComp) {
-        view.dispatch({
-          effects: [
-            wrapComp.reconfigure(settings.wordWrap ? EditorView.lineWrapping : []),
-            fontComp.reconfigure(
-              EditorView.theme({ ".cm-content": { fontSize: `${settings.fontSize}px` } })
-            ),
-          ],
-        });
-      }
+      const compartments = this.compartments.get(tabId);
+      if (!compartments) return;
+      view.dispatch({
+        effects: [
+          compartments.wrap.reconfigure(wrapExtension(settings)),
+          compartments.font.reconfigure(fontExtension(settings)),
+          compartments.indent.reconfigure(indentExtension(settings)),
+          compartments.whitespace.reconfigure(whitespaceExtension(settings)),
+        ],
+      });
     });
   }
 }

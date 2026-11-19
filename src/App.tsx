@@ -40,7 +40,7 @@ function App() {
 
   const [mode, setMode] = useState<EditorMode>("raw");
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0, charCount: 0 });
+  const [cursorInfo, setCursorInfo] = useState<CursorInfo>({ line: 1, column: 1, wordCount: 0, charCount: 0, selectionCount: 1, selectionLength: 0 });
   const [settings, setSettings] = useState<EditorSettings>(loadSettings);
   const [recentFiles, setRecentFiles] = useState<string[]>(loadRecentFiles);
   const { toasts, showToast, dismissToast } = useToast();
