@@ -39,11 +39,24 @@ Tauri, and the same editor runs in a browser.
 
 ### Write and edit
 
-- **Two views of one file.** Raw mode is CodeMirror 6 with markdown highlighting, line numbers,
+- **Two views of one file.** Raw mode is CodeMirror 6 with syntax highlighting, line numbers,
   folding, find and replace, and a minimap. Visual mode is a WYSIWYG editor (Milkdown Crepe) with
   tables, task lists, images, highlighted code blocks and a `/` block menu. **Ctrl+E** switches.
-- **Formatting toolbar and shortcuts** in raw mode for headings, bold, italic, strikethrough,
-  code, links, images, lists, quotes, code blocks and rules.
+- **Any text file.** Code, config, logs and notes open as well as markdown; binary files are
+  refused with a notice. Highlighting follows the file name, for about 140 languages, and the
+  language name in the status bar picks another one or returns to auto-detect. Visual mode, the
+  formatting toolbar, the outline and the markdown commands appear only in markdown tabs.
+- **Multiple cursors and line commands.** **Ctrl+D** selects the next occurrence,
+  **Ctrl+Alt+↑/↓** adds a cursor, Ctrl+click adds one anywhere and Alt+drag selects a column.
+  The **Edit** and **Selection** menus move, duplicate, delete, comment, indent, join, sort and
+  de-duplicate lines, trim trailing whitespace and change case. Join Lines joins the cursor's
+  line with the next.
+- **Line endings and indentation.** Each file keeps its LF or CRLF line endings when saved; the
+  status bar shows them, and clicking switches. The status bar also shows the indentation
+  (spaces 2, 4 or 8, or tabs) and opens a chooser, and **View → Show Whitespace** marks spaces and
+  tabs. With a selection, the status bar counts selected characters or cursors.
+- **Formatting toolbar and shortcuts** in markdown tabs, raw mode, for headings, bold, italic,
+  strikethrough, code, links, images, lists, quotes, code blocks and rules.
 - **Tables and task lists.** **Format Table** pads and aligns the pipe table at the cursor.
   **Ctrl+Shift+9** toggles a task checkbox, and checkboxes are clickable in visual mode.
 - **Outline sidebar** (**Ctrl+Shift+O**, raw mode): the document's headings; click one to jump
@@ -59,9 +72,9 @@ Tauri, and the same editor runs in a browser.
   a conflict bar: **Reload from disk**, **Keep my version** or **View diff**.
 - **Diff view** (**Ctrl+Shift+D**): your buffer side by side with the last saved version, or,
   from the conflict bar, with the new version on disk.
-- **Copy for AI** (**Ctrl+Shift+A**) copies the file path, then the document in one fenced block.
-  The fence is longer than any backtick run in the document, so code blocks inside it can't end
-  it early:
+- **Copy for AI** (**Ctrl+Shift+A**) copies the file path, then the document in one fenced block
+  tagged with its language (`markdown`, `python`, `json`, `text` …). The fence is longer than any
+  backtick run in the document, so code blocks inside it can't end it early:
 
   ````text
   C:\projects\app\PLAN.md
@@ -81,19 +94,37 @@ Tauri, and the same editor runs in a browser.
 
 - **Tabs.** Each tab keeps its own undo history and scroll position. Drag tabs to reorder them,
   right-click one for **Close Others** and **Copy Path**, and double-click the empty strip for a
-  new tab.
+  new tab. **Reopen Closed Tab** (**Ctrl+Shift+T**) brings back the last 20 tabs closed since
+  launch, unsaved edits included.
 - **Hot exit** (desktop). Closing the window never asks to save. Open tabs, unsaved edits
   included, come back on the next launch, and the session is also saved every 10 seconds. Files
   that changed on disk while MDE was closed are checked on restore like a live change.
-- **Auto-Save** (desktop, off by default, in the Edit menu) saves edited files about 1.5 seconds
-  after the last change. It skips tabs in conflict with the file on disk.
+- **Auto-Save** (off by default, in the File menu) saves edited files about 1.5 seconds after the
+  last change. It skips tabs in conflict with the file on disk, and in the browser it saves only
+  files linked to a file on disk, never by download.
 - **One window.** Files opened from Explorer, a file manager or the command line arrive as tabs
-  in the running window. MDE registers for `.md`, `.markdown`, `.mdx` and `.txt`, and accepts
-  dropped files of those types.
-- **Command palette** (**Ctrl+K**): every command, plus the 10 most recent files on desktop,
+  in the running window. MDE registers for `.md`, `.markdown`, `.mdx` and `.txt`, and accepts any
+  dropped text file.
+- **Command palette** (**Ctrl+K**): every menu command, plus the 10 most recent files,
   fuzzy-matched.
 - **Export.** **File → Export HTML…** writes a standalone HTML page; **Edit → Copy as HTML**
   puts the rendered HTML on the clipboard.
+
+### In the browser
+
+- **Installable and offline.** [The browser version](https://seveneves.ai/mde/app/) can be
+  installed as an app from Chrome or Edge, then starts without a network connection and can open
+  markdown and text files from the operating system.
+- **Saves back to your files** in Chrome and Edge. Opened files stay linked after a reload; the
+  browser may ask again for permission to read or write them. Other browsers download a copy on
+  save, and MDE says so when a save downloads.
+- **Outside changes** to linked files are checked when you return to the window, if the browser
+  still lets MDE read them without asking: a clean tab reloads, and a tab with unsaved edits gets
+  the conflict bar.
+- **Recent files and Auto-Save** work for files linked to a file on disk.
+- **Shortcuts the browser keeps for itself** have alternates: **Alt+N** new tab, **Alt+W** close
+  tab, **Alt+Shift+T** reopen closed tab, **Alt+PageDown** / **Alt+PageUp** next / previous tab.
+  Menus, the palette and the start screen show these in the browser.
 
 ## Install
 
@@ -130,21 +161,40 @@ Updates…** checks on demand.
 
 On macOS, app shortcuts accept Cmd or Control, and editing shortcuts use Cmd.
 
+In the browser, which keeps some chords for itself, use `Alt+N`, `Alt+W`, `Alt+Shift+T` and
+`Alt+PageDown` / `Alt+PageUp` for new tab, close tab, reopen closed tab and next / previous tab.
+
 | App | Action |
 |---|---|
 | `Ctrl+N` / `Ctrl+O` | New tab / open file |
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / save as |
-| `Ctrl+W` | Close tab |
+| `Ctrl+W` / `Ctrl+Shift+T` | Close tab / reopen closed tab |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab (also `Ctrl+PageDown` / `Ctrl+PageUp`) |
 | `Ctrl+K` | Command palette |
-| `Ctrl+E` | Switch raw / visual mode |
+| `Ctrl+E` | Switch raw / visual mode (markdown tabs) |
 | `Ctrl+Shift+O` | Outline sidebar |
 | `Ctrl+Shift+D` | Diff unsaved changes |
 | `Ctrl+Shift+A` | Copy for AI |
-| `Ctrl+Alt+W` | Word wrap (also **Edit → Toggle Word Wrap**) |
+| `Ctrl+Alt+W` | Word wrap (also **View → Word Wrap**) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Font size up / down / reset (10–24 px) |
 
 | Editing, raw mode | Action |
+|---|---|
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+F` / `Ctrl+H` | Find / replace (one panel) |
+| `F3` / `Shift+F3` | Find next / previous |
+| `Ctrl+G` | Go to line |
+| `Alt+↑` / `Alt+↓` | Move line up / down |
+| `Shift+Alt+↑` / `Shift+Alt+↓` | Duplicate line up / down |
+| `Ctrl+Shift+K` | Delete line (not in markdown tabs, where it inserts an image) |
+| `Ctrl+/` / `Shift+Alt+A` | Toggle line / block comment |
+| `Ctrl+]` / `Ctrl+[` | Indent / outdent |
+| `Alt+L` | Select line |
+| `Ctrl+D` | Select next occurrence |
+| `Ctrl+Shift+L` | Select all occurrences (not in markdown tabs, where it inserts a link) |
+| `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | Add cursor above / below |
+
+| Markdown, raw mode | Action |
 |---|---|
 | `Ctrl+B` / `Ctrl+I` | Bold / italic |
 | `Ctrl+Shift+X` | Strikethrough |
@@ -155,7 +205,6 @@ On macOS, app shortcuts accept Cmd or Control, and editing shortcuts use Cmd.
 | `Ctrl+Shift+9` | Toggle task checkbox |
 | `Ctrl+Shift+.` | Blockquote |
 | ``Ctrl+Shift+` `` | Code block |
-| `Ctrl+F` | Find and replace |
 
 ## For AI agents
 
@@ -187,7 +236,8 @@ Auto-Save is off by default and skips tabs in conflict. It has no permission to 
 files.
 
 **Read what the person pastes.** Copy for AI produces the file path on the first line, then the
-document inside a fenced `markdown` block, as shown under [Features](#work-alongside-ai-agents).
+document inside a fenced block tagged with its language (`markdown` for markdown files), as shown
+under [Features](#work-alongside-ai-agents).
 
 ## How it works
 
@@ -229,15 +279,18 @@ flowchart LR
 - **macOS:** MDE does not yet handle Finder's open-file events, so opening a file from Finder
   starts MDE without the file. Use **File → Open…** or drop the file on the window.
 - The outline sidebar and formatting toolbar are raw mode only; Mermaid diagrams render in
-  visual mode only.
+  visual mode only. Menu editing commands (line commands, Undo, Find …) act in raw mode; in
+  visual mode, switch with **Ctrl+E** first.
+- Indentation, word wrap and whitespace markers are app-wide settings, not per file, and Reopen
+  Closed Tab forgets closed tabs when MDE restarts.
 - The minimap turns off for documents over 10,000 lines.
 - There is one theme, dark.
 - Hot exit keeps unsaved edits in the app's local storage, which has a size limit; save very
   large documents rather than relying on it.
-- **In the browser:** there is no live reload, Auto-Save, recent files or updating. Chrome and
-  Edge save back to the opened file; other browsers download a copy, as does Save on a tab
-  restored after a page reload. The browser keeps some shortcuts for itself, such as `Ctrl+N`,
-  `Ctrl+W` and `Ctrl+Tab`.
+- **In the browser:** outside changes are noticed when you return to the window, not live, and
+  there is no in-app updating. Firefox and Safari cannot write back to a file or read it again,
+  so there Save downloads a copy, and recent files, outside-change checks and Auto-Save need
+  Chrome or Edge.
 
 ## Build from source
 
