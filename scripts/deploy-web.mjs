@@ -50,12 +50,8 @@ function run(cmd, args) {
   execFileSync(cmd, args, { stdio: 'inherit', cwd: SITE });
 }
 
-// 1. Swap vite's stock head for the site's: real favicons + analytics loader.
-patch(
-  path.join(DIST, 'index.html'),
-  '<link rel="icon" type="image/svg+xml" href="./vite.svg" />',
-  '<link rel="icon" type="image/png" sizes="32x32" href="/mde/icons/32.png">\n    <link rel="icon" type="image/png" sizes="64x64" href="/mde/icons/64.png">'
-);
+// 1. Add the site's analytics loader. Favicon, manifest and icons ship in the
+//    build itself (relative URLs), so nothing else in the head changes.
 patch(
   path.join(DIST, 'index.html'),
   '<title>MDE</title>',

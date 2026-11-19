@@ -1,0 +1,25 @@
+{
+  "name": "MDE — Markdown & Text Editor",
+  "short_name": "MDE",
+  "description": "Markdown and text editor with raw and visual modes, built for files that AI agents read and write.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "text/markdown": [".md", ".markdown", ".mdx"],
+        "text/plain": [".txt", ".text", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".ini", ".cfg", ".conf"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" }
+}
