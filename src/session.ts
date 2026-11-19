@@ -7,6 +7,7 @@
  * work always beats dropping it.
  */
 import type { DocTab } from "./store/documentStore";
+import { detectEol, toLf, type Eol } from "./lineEndings";
 
 const SESSION_KEY = "mde-session";
 // Pre-1.2 crash-recovery keys — read once as a fallback, then removed.
@@ -26,14 +27,34 @@ export function saveSession(tabs: readonly DocTab[], activeTabId: string): void 
   } catch { /* quota — losing a snapshot is acceptable */ }
 }
 
-function isValidTab(t: unknown): t is DocTab {
-  if (typeof t !== "object" || t === null) return false;
+const isEol = (v: unknown): v is Eol => v === "lf" || v === "crlf";
+
+/**
+ * A stored tab, upgraded to the current shape; null when a required field is
+ * missing. Sessions written before line-ending support have no `eol` and may
+ * hold CRLF text: the ending is detected (from the saved text, which mirrors
+ * the file) and the text normalised, so they restore instead of being dropped.
+ */
+function restoreTab(t: unknown): DocTab | null {
+  if (typeof t !== "object" || t === null) return null;
   const tab = t as Record<string, unknown>;
-  return typeof tab.id === "string"
-    && typeof tab.title === "string"
-    && typeof tab.content === "string"
-    && typeof tab.savedContent === "string"
-    && (tab.filePath === null || typeof tab.filePath === "string");
+  const { id, title, content, savedContent, filePath } = tab;
+  if (typeof id !== "string" || typeof title !== "string") return null;
+  if (typeof content !== "string" || typeof savedContent !== "string") return null;
+  if (filePath !== null && typeof filePath !== "string") return null;
+
+  const detected = detectEol(savedContent.includes("\n") ? savedContent : content);
+  const eol = isEol(tab.eol) ? tab.eol : detected;
+  return {
+    id,
+    title,
+    content: toLf(content),
+    savedContent: toLf(savedContent),
+    filePath,
+    eol,
+    savedEol: isEol(tab.savedEol) ? tab.savedEol : eol,
+    languageOverride: typeof tab.languageOverride === "string" ? tab.languageOverride : null,
+  };
 }
 
 /** Load the last session. Returns null if none or malformed. */
@@ -43,16 +64,23 @@ export function loadSession(): SessionData | null {
     localStorage.removeItem(LEGACY_RECOVERY_KEY);
     localStorage.removeItem(LEGACY_DIRTY_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as SessionData;
-    if (!Array.isArray(data.tabs) || data.tabs.length === 0) return null;
-    if (!data.tabs.every(isValidTab)) return null;
-    if (typeof data.activeTabId !== "string") return null;
-    return data;
+    const data: unknown = JSON.parse(raw);
+    if (typeof data !== "object" || data === null) return null;
+    const { tabs, activeTabId, timestamp } = data as Record<string, unknown>;
+    if (!Array.isArray(tabs) || tabs.length === 0) return null;
+    if (typeof activeTabId !== "string") return null;
+    const restored = tabs.map(restoreTab);
+    if (restored.some((t) => t === null)) return null;
+    return {
+      tabs: restored.filter((t): t is DocTab => t !== null),
+      activeTabId,
+      timestamp: typeof timestamp === "number" ? timestamp : 0,
+    };
   } catch {
-    return null;
+    return null; // unreadable storage or corrupt JSON: start with a fresh tab
   }
 }
 
 export function clearSession(): void {
-  try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* storage unavailable: nothing to clear */ }
 }

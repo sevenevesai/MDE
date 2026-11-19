@@ -6,6 +6,8 @@ const tab = (patch: Partial<AutoSaveCandidate>): AutoSaveCandidate => ({
   filePath: "C:/docs/a.md",
   content: "changed",
   savedContent: "saved",
+  eol: "lf",
+  savedEol: "lf",
   ...patch,
 });
 
@@ -16,7 +18,12 @@ describe("selectAutoSaveTargets", () => {
 
   it("selects a dirty file-backed tab when enabled", () => {
     const targets = selectAutoSaveTargets([tab({})], new Set(), true);
-    expect(targets).toEqual([{ id: "t1", filePath: "C:/docs/a.md", content: "changed" }]);
+    expect(targets).toEqual([{ id: "t1", filePath: "C:/docs/a.md", content: "changed", eol: "lf" }]);
+  });
+
+  it("selects a tab whose only change is its line ending", () => {
+    const targets = selectAutoSaveTargets([tab({ content: "same", savedContent: "same", eol: "crlf" })], new Set(), true);
+    expect(targets).toEqual([{ id: "t1", filePath: "C:/docs/a.md", content: "same", eol: "crlf" }]);
   });
 
   it("skips untitled tabs (no filePath)", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCopyForAI, cleanAIText, formatTable, isSeparatorRow } from "../aiTools";
+import { buildCopyForAI, cleanAIText, fenceInfoFor, formatTable, isSeparatorRow } from "../aiTools";
 
 // ─── Copy for AI ────────────────────────────────────────
 
@@ -28,6 +28,19 @@ describe("buildCopyForAI", () => {
     expect(buildCopyForAI("t.md", content)).toBe(
       "t.md\n`````markdown\na ```` b\n`````"
     );
+  });
+
+  it("tags the fence with the document's language", () => {
+    expect(buildCopyForAI("/src/app.py", "x = 1", fenceInfoFor("Python"))).toBe("/src/app.py\n```python\nx = 1\n```");
+  });
+});
+
+describe("fenceInfoFor", () => {
+  it("maps editor language ids to fence info strings", () => {
+    expect(fenceInfoFor("markdown")).toBe("markdown");
+    expect(fenceInfoFor("plain")).toBe("text");
+    expect(fenceInfoFor("JSON")).toBe("json");
+    expect(fenceInfoFor("Protocol Buffer")).toBe("protocolbuffer");
   });
 });
 

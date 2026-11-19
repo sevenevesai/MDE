@@ -1,10 +1,10 @@
 import { isTauri } from "../platform";
-import MenuBar, { type MenuActions } from "./MenuBar";
+import MenuBar, { type MenuBarProps } from "./MenuBar";
 
 interface TitleBarProps {
   filePath: string | null;
   title: string;
-  menuActions: MenuActions;
+  menu: MenuBarProps;
 }
 
 // Cache the Tauri window API so we don't re-import on every button click
@@ -21,7 +21,7 @@ if (isTauri) {
   });
 }
 
-export default function TitleBar({ filePath, title, menuActions }: TitleBarProps) {
+export default function TitleBar({ filePath, title, menu }: TitleBarProps) {
   return (
     <div
       {...(isTauri ? { "data-tauri-drag-region": true } : {})}
@@ -35,7 +35,7 @@ export default function TitleBar({ filePath, title, menuActions }: TitleBarProps
         <span className="text-xs font-semibold text-text-secondary tracking-wide pl-3 pr-2 shrink-0">
           MDE
         </span>
-        <MenuBar actions={menuActions} />
+        <MenuBar {...menu} />
         <span className="text-text-muted text-xs mx-2 shrink-0">&mdash;</span>
         <span className="text-xs text-text-secondary truncate pr-2" title={filePath ?? title}>
           {filePath ?? title}

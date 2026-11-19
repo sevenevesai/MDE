@@ -1,5 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { createNewTab, isModified, adjacentTabId, docReducer, type DocTab, type DocState } from "../documentStore";
+import {
+  createNewTab, isModified, adjacentTabId, docReducer, fromDisk, tabFromFile, tabLanguage,
+  type DocTab, type DocState,
+} from "../documentStore";
+
+function makeTab(overrides: Partial<DocTab> = {}): DocTab {
+  return {
+    id: "tab-1",
+    title: "test.md",
+    content: "",
+    savedContent: "",
+    filePath: null,
+    eol: "lf",
+    savedEol: "lf",
+    languageOverride: null,
+    ...overrides,
+  };
+}
+
+function makeState(overrides: Partial<DocState> = {}): DocState {
+  const tab = makeTab();
+  return {
+    tabs: [tab],
+    activeTabId: tab.id,
+    ...overrides,
+  };
+}
 
 // ─── Utility Functions ──────────────────────────────────
 
@@ -25,29 +51,56 @@ describe("createNewTab", () => {
     expect(tab.savedContent).toBe("");
     expect(tab.filePath).toBeNull();
   });
+
+  it("uses LF line endings and no language override", () => {
+    const tab = createNewTab();
+    expect(tab.eol).toBe("lf");
+    expect(tab.savedEol).toBe("lf");
+    expect(tab.languageOverride).toBeNull();
+  });
+});
+
+describe("fromDisk / tabFromFile", () => {
+  it("normalises CRLF text to LF and remembers the line ending", () => {
+    expect(fromDisk("a\r\nb\r\n")).toEqual({ content: "a\nb\n", eol: "crlf" });
+    expect(fromDisk("a\nb")).toEqual({ content: "a\nb", eol: "lf" });
+  });
+
+  it("builds a clean tab from a file", () => {
+    const tab = tabFromFile({ path: "/docs/a.py", name: "a.py", content: "x = 1\r\n" });
+    expect(tab).toMatchObject({
+      title: "a.py", filePath: "/docs/a.py", content: "x = 1\n", savedContent: "x = 1\n",
+      eol: "crlf", savedEol: "crlf", languageOverride: null,
+    });
+    expect(isModified(tab)).toBe(false);
+  });
+});
+
+describe("tabLanguage", () => {
+  const base = { languageOverride: null, filePath: null, title: "Untitled-1.md" };
+
+  it("detects from the path, then the title", () => {
+    expect(tabLanguage({ ...base, filePath: "/src/app.json", title: "app.json" })).toBe("JSON");
+    expect(tabLanguage(base)).toBe("markdown");
+    expect(tabLanguage({ ...base, title: "notes.py" })).toBe("Python");
+  });
+
+  it("prefers the override", () => {
+    expect(tabLanguage({ ...base, filePath: "/src/app.json", languageOverride: "Python" })).toBe("Python");
+  });
 });
 
 describe("isModified", () => {
   it("returns false when content equals savedContent", () => {
-    const tab: DocTab = {
-      id: "test",
-      title: "test.md",
-      content: "hello",
-      savedContent: "hello",
-      filePath: null,
-    };
-    expect(isModified(tab)).toBe(false);
+    expect(isModified(makeTab({ content: "hello", savedContent: "hello" }))).toBe(false);
   });
 
   it("returns true when content differs from savedContent", () => {
-    const tab: DocTab = {
-      id: "test",
-      title: "test.md",
-      content: "hello world",
-      savedContent: "hello",
-      filePath: null,
-    };
-    expect(isModified(tab)).toBe(true);
+    expect(isModified(makeTab({ content: "hello world", savedContent: "hello" }))).toBe(true);
+  });
+
+  it("returns true when only the line ending changed", () => {
+    expect(isModified(makeTab({ content: "a", savedContent: "a", eol: "crlf", savedEol: "lf" }))).toBe(true);
   });
 
   it("returns false for a freshly created tab", () => {
@@ -56,9 +109,7 @@ describe("isModified", () => {
 });
 
 describe("adjacentTabId", () => {
-  const tabs = ["a", "b", "c"].map((id) => ({
-    id, title: id, content: "", savedContent: "", filePath: null,
-  }));
+  const tabs = ["a", "b", "c"].map((id) => makeTab({ id }));
 
   it("moves forward and backward", () => {
     expect(adjacentTabId(tabs, "a", 1)).toBe("b");
@@ -76,26 +127,6 @@ describe("adjacentTabId", () => {
 });
 
 // ─── Reducer ────────────────────────────────────────────
-
-function makeTab(overrides: Partial<DocTab> = {}): DocTab {
-  return {
-    id: overrides.id ?? "tab-1",
-    title: overrides.title ?? "test.md",
-    content: overrides.content ?? "",
-    savedContent: overrides.savedContent ?? "",
-    filePath: overrides.filePath ?? null,
-    ...overrides,
-  };
-}
-
-function makeState(overrides: Partial<DocState> = {}): DocState {
-  const tab = makeTab();
-  return {
-    tabs: [tab],
-    activeTabId: tab.id,
-    ...overrides,
-  };
-}
 
 describe("docReducer", () => {
   describe("ADD_TAB", () => {
@@ -168,13 +199,43 @@ describe("docReducer", () => {
   });
 
   describe("MARK_SAVED", () => {
-    it("sets savedContent to current content", () => {
-      const tab = makeTab({ content: "edited", savedContent: "original" });
+    it("records the written content and line ending as saved", () => {
+      const tab = makeTab({ content: "edited", savedContent: "original", eol: "crlf" });
       const state = makeState({ tabs: [tab] });
 
-      const next = docReducer(state, { type: "MARK_SAVED", tabId: "tab-1" });
+      const next = docReducer(state, { type: "MARK_SAVED", tabId: "tab-1", content: "edited", eol: "crlf" });
       expect(next.tabs[0].savedContent).toBe("edited");
+      expect(next.tabs[0].savedEol).toBe("crlf");
       expect(isModified(next.tabs[0])).toBe(false);
+    });
+
+    it("leaves edits made during the write unsaved", () => {
+      const tab = makeTab({ content: "edited more", savedContent: "original" });
+      const next = docReducer(makeState({ tabs: [tab] }), { type: "MARK_SAVED", tabId: "tab-1", content: "edited", eol: "lf" });
+      expect(next.tabs[0].savedContent).toBe("edited");
+      expect(isModified(next.tabs[0])).toBe(true);
+    });
+  });
+
+  describe("SET_EOL", () => {
+    it("makes a clean tab saveable, and switching back makes it clean again", () => {
+      const state = makeState({ tabs: [makeTab({ content: "a\nb", savedContent: "a\nb" })] });
+      const crlf = docReducer(state, { type: "SET_EOL", tabId: "tab-1", eol: "crlf" });
+      expect(crlf.tabs[0].eol).toBe("crlf");
+      expect(crlf.tabs[0].content).toBe("a\nb");
+      expect(isModified(crlf.tabs[0])).toBe(true);
+
+      const back = docReducer(crlf, { type: "SET_EOL", tabId: "tab-1", eol: "lf" });
+      expect(isModified(back.tabs[0])).toBe(false);
+    });
+  });
+
+  describe("SET_LANGUAGE", () => {
+    it("sets and clears the override", () => {
+      const set = docReducer(makeState(), { type: "SET_LANGUAGE", tabId: "tab-1", languageOverride: "Python" });
+      expect(set.tabs[0].languageOverride).toBe("Python");
+      const cleared = docReducer(set, { type: "SET_LANGUAGE", tabId: "tab-1", languageOverride: null });
+      expect(cleared.tabs[0].languageOverride).toBeNull();
     });
   });
 
@@ -203,22 +264,30 @@ describe("docReducer", () => {
     });
   });
 
-  describe("OPEN_FILE_INTO_CURRENT", () => {
-    it("replaces current tab with file data", () => {
-      const state = makeState();
+  describe("LOAD_FILE", () => {
+    it("loads file data into the tab as its clean state", () => {
+      const state = makeState({ tabs: [makeTab({ content: "draft", eol: "crlf" })] });
       const next = docReducer(state, {
-        type: "OPEN_FILE_INTO_CURRENT",
+        type: "LOAD_FILE",
         tabId: "tab-1",
         name: "readme.md",
-        content: "# Hello",
         path: "/docs/readme.md",
+        text: fromDisk("# Hello\r\n"),
       });
 
-      expect(next.tabs[0].title).toBe("readme.md");
-      expect(next.tabs[0].content).toBe("# Hello");
-      expect(next.tabs[0].savedContent).toBe("# Hello");
-      expect(next.tabs[0].filePath).toBe("/docs/readme.md");
+      expect(next.tabs[0]).toMatchObject({
+        title: "readme.md", filePath: "/docs/readme.md",
+        content: "# Hello\n", savedContent: "# Hello\n", eol: "crlf", savedEol: "crlf",
+      });
       expect(isModified(next.tabs[0])).toBe(false);
+    });
+
+    it("keeps the language override for the same file and drops it for another", () => {
+      const state = makeState({ tabs: [makeTab({ filePath: "/a.txt", languageOverride: "Python" })] });
+      const same = docReducer(state, { type: "LOAD_FILE", tabId: "tab-1", name: "a.txt", path: "/a.txt", text: fromDisk("x") });
+      expect(same.tabs[0].languageOverride).toBe("Python");
+      const other = docReducer(state, { type: "LOAD_FILE", tabId: "tab-1", name: "b.txt", path: "/b.txt", text: fromDisk("x") });
+      expect(other.tabs[0].languageOverride).toBeNull();
     });
   });
 

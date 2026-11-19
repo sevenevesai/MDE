@@ -1,14 +1,18 @@
 import { basename } from "../fileOps.platform";
+import { isTauri } from "../platform";
+import { commandLabel, shortcutLabel, type CommandId } from "../commandCatalog";
 
-const SHORTCUTS: Array<{ chord: string; label: string }> = [
-  { chord: "Ctrl+K", label: "Command palette" },
-  { chord: "Ctrl+E", label: "Toggle raw/visual mode" },
-  { chord: "Ctrl+N", label: "New tab" },
-  { chord: "Ctrl+O", label: "Open file" },
-  { chord: "Ctrl+S", label: "Save" },
-  { chord: "Ctrl+Shift+A", label: "Copy for AI" },
-  { chord: "Ctrl+Shift+O", label: "Toggle outline" },
-  { chord: "Ctrl+Shift+D", label: "Diff vs disk" },
+const SHORTCUTS: readonly CommandId[] = [
+  "view.palette",
+  "view.toggleMode",
+  "file.new",
+  "file.open",
+  "file.save",
+  "file.reopenClosed",
+  "edit.copyForAI",
+  "view.outline",
+  "view.diffUnsaved",
+  "sel.selectNext",
 ];
 
 const MAX_RECENT_SHOWN = 6;
@@ -20,6 +24,8 @@ interface EmptyStateProps {
 
 export default function EmptyState({ recentFiles, onOpenRecent }: EmptyStateProps) {
   const shown = recentFiles.slice(0, MAX_RECENT_SHOWN);
+  // The overlay only shows on an empty untitled tab, which is always markdown.
+  const ctx = { tauri: isTauri, markdown: true };
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -48,10 +54,10 @@ export default function EmptyState({ recentFiles, onOpenRecent }: EmptyStateProp
         <div className="pointer-events-none w-full">
           <div className="text-[10px] uppercase tracking-wide text-text-muted mb-2">Shortcuts</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-left">
-            {SHORTCUTS.map((s) => (
-              <div key={s.chord} className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-text-secondary">{s.label}</span>
-                <span className="text-text-muted font-mono text-[10px] shrink-0">{s.chord}</span>
+            {SHORTCUTS.map((id) => (
+              <div key={id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-text-secondary">{commandLabel(id).replace(/…$/, "")}</span>
+                <span className="text-text-muted font-mono text-[10px] shrink-0">{shortcutLabel(id, ctx)}</span>
               </div>
             ))}
           </div>

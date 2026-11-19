@@ -7,6 +7,9 @@ export type EditorMode = "raw" | "visual";
 interface EditorAreaProps {
   activeTabId: string;
   initialContent: string;
+  /** The active tab's language id (see editor/language.ts). */
+  languageId: string;
+  /** The mode to show: always "raw" for languages without a visual mode. */
   mode: EditorMode;
   onChange: (tabId: string, value: string) => void;
   onCursorChange: (info: CursorInfo) => void;
@@ -19,6 +22,7 @@ interface EditorAreaProps {
 export default function EditorArea({
   activeTabId,
   initialContent,
+  languageId,
   mode,
   onChange,
   onCursorChange,
@@ -90,7 +94,7 @@ export default function EditorArea({
         // File was opened into this tab — sync CM with new content
         cmMgr.setContent(activeTabId, initialContent);
       }
-      cmMgr.activate(activeTabId, initialContent);
+      cmMgr.activate(activeTabId, initialContent, languageId);
     } else {
       // Activate Milkdown — get the freshest content from CM
       const content = modeChanged
@@ -111,7 +115,20 @@ export default function EditorArea({
 
     // --- SLEEK: crossfade the newly-shown container on a mode switch only.
     if (modeChanged) setModeFadeKey((k) => k + 1);
+    // languageId is deliberately not a dependency: it matters only when activate() creates an
+    // editor; a change on an existing one goes through the effect below.
   }, [activeTabId, initialContent, mode, editorManagerRef, milkdownManagerRef]);
+
+  // A language change on the shown tab (override, or Save As to another extension).
+  // A tab switch needs nothing: activate() creates editors with their language.
+  const prevLanguageRef = useRef({ tabId: activeTabId, languageId });
+  useEffect(() => {
+    const prev = prevLanguageRef.current;
+    prevLanguageRef.current = { tabId: activeTabId, languageId };
+    if (prev.tabId === activeTabId && prev.languageId !== languageId) {
+      void editorManagerRef.current.setLanguage(activeTabId, languageId);
+    }
+  }, [activeTabId, languageId, editorManagerRef]);
 
   return (
     <div className="flex-1 overflow-hidden relative">

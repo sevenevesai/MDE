@@ -5,9 +5,10 @@ interface CommandPaletteProps {
   open: boolean;
   commands: readonly PaletteCommand[];
   onClose: () => void;
+  placeholder?: string;
 }
 
-export default function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
+export default function CommandPalette({ open, commands, onClose, placeholder = "Type a command…" }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -65,7 +66,7 @@ export default function CommandPalette({ open, commands, onClose }: CommandPalet
             setSelected(0);
           }}
           onKeyDown={onKeyDown}
-          placeholder="Type a command…"
+          placeholder={placeholder}
           spellCheck={false}
           className="w-full px-3 py-2.5 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none border-b border-border"
         />
@@ -83,8 +84,8 @@ export default function CommandPalette({ open, commands, onClose }: CommandPalet
               }`}
             >
               <span className="truncate">{cmd.title}</span>
-              {cmd.shortcut && (
-                <span className="text-text-muted ml-6 text-[10px] shrink-0">{cmd.shortcut}</span>
+              {(cmd.shortcut ?? cmd.detail) && (
+                <span className="text-text-muted ml-6 text-[10px] shrink-0">{cmd.shortcut ?? cmd.detail}</span>
               )}
             </button>
           ))}

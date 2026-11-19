@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { saveSession, loadSession, clearSession } from "../session";
-import type { DocTab } from "../store/documentStore";
+import { isModified, type DocTab } from "../store/documentStore";
 
 function tab(overrides: Partial<DocTab> = {}): DocTab {
   return {
@@ -9,6 +9,9 @@ function tab(overrides: Partial<DocTab> = {}): DocTab {
     content: "hello",
     savedContent: "hello",
     filePath: "C:\\docs\\a.md",
+    eol: "lf",
+    savedEol: "lf",
+    languageOverride: null,
     ...overrides,
   };
 }
@@ -62,6 +65,41 @@ describe("malformed data", () => {
       JSON.stringify({ tabs: [{ id: "t1", title: "a.md" }], activeTabId: "t1", timestamp: 1 })
     );
     expect(loadSession()).toBeNull();
+  });
+});
+
+describe("sessions saved before line-ending support", () => {
+  /** A tab as older versions stored it: no eol, savedEol or languageOverride. */
+  function legacyTab(content: string, savedContent: string) {
+    return { id: "t1", title: "a.md", content, savedContent, filePath: "C:\\docs\\a.md" };
+  }
+
+  it("restores a CRLF tab as LF text with a CRLF line ending, unmodified", () => {
+    localStorage.setItem(
+      "mde-session",
+      JSON.stringify({ tabs: [legacyTab("one\r\ntwo\r\n", "one\r\ntwo\r\n")], activeTabId: "t1", timestamp: 1 }),
+    );
+    const restored = loadSession()?.tabs[0];
+    expect(restored).toMatchObject({
+      content: "one\ntwo\n", savedContent: "one\ntwo\n", eol: "crlf", savedEol: "crlf", languageOverride: null,
+    });
+    expect(restored && isModified(restored)).toBe(false);
+  });
+
+  it("detects from the saved text when the buffer was already normalised by the editor", () => {
+    localStorage.setItem(
+      "mde-session",
+      JSON.stringify({ tabs: [legacyTab("one\ntwo\nthree", "one\r\ntwo\r\n")], activeTabId: "t1", timestamp: 1 }),
+    );
+    const restored = loadSession()?.tabs[0];
+    expect(restored?.eol).toBe("crlf");
+    expect(restored?.content).toBe("one\ntwo\nthree");
+    expect(restored?.savedContent).toBe("one\ntwo\n");
+  });
+
+  it("keeps stored line endings and language overrides", () => {
+    saveSession([tab({ eol: "crlf", savedEol: "lf", languageOverride: "Python" })], "t1");
+    expect(loadSession()?.tabs[0]).toMatchObject({ eol: "crlf", savedEol: "lf", languageOverride: "Python" });
   });
 });
 

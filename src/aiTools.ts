@@ -23,13 +23,23 @@ function longestBacktickRun(text: string): number {
 
 /**
  * Build an AI-friendly representation of a document: the file path (or title)
- * on the first line, then the content inside a fenced ```markdown block. The
- * fence is always longer than the longest backtick run in the content so an
- * embedded code fence can't terminate the block early.
+ * on the first line, then the content inside a fenced block tagged with `info`
+ * (see fenceInfoFor). The fence is always longer than the longest backtick run
+ * in the content so an embedded code fence can't terminate the block early.
  */
-export function buildCopyForAI(pathOrTitle: string, content: string): string {
+export function buildCopyForAI(pathOrTitle: string, content: string, info: string = "markdown"): string {
   const fence = "`".repeat(Math.max(3, longestBacktickRun(content) + 1));
-  return `${pathOrTitle}\n${fence}markdown\n${content}\n${fence}`;
+  return `${pathOrTitle}\n${fence}${info}\n${content}\n${fence}`;
+}
+
+/**
+ * Fence info string for an editor language id (see editor/language.ts):
+ * "markdown", "text" for plain text, else the language name lowercased without
+ * spaces ("Python" → "python", "Protocol Buffer" → "protocolbuffer").
+ */
+export function fenceInfoFor(languageId: string): string {
+  if (languageId === "plain") return "text";
+  return languageId.toLowerCase().replace(/\s+/g, "");
 }
 
 // ─── Clean AI Paste ─────────────────────────────────────

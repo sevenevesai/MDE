@@ -29,14 +29,6 @@ export async function openFiles(): Promise<OpenedFiles> {
   return (await getOps()).openFiles();
 }
 
-/** Single-file open used by App.tsx; goes away with the App integration of openFiles. */
-export async function openFile(): Promise<FileResult | null> {
-  const { files, skipped } = await openFiles();
-  if (files.length > 0) return files[0];
-  if (skipped.length > 0) throw new Error(`Cannot open "${skipped[0].name}": ${skipped[0].reason}`);
-  return null;
-}
-
 export async function readFile(path: string): Promise<FileResult> {
   return (await getOps()).readFile(path);
 }

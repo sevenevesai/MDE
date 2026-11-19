@@ -1,29 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { isTauri } from "../platform";
-
-interface MenuItem {
-  label: string;
-  shortcut?: string;
-  action: () => void;
-  separator?: false;
-}
-
-interface MenuSeparator {
-  separator: true;
-}
-
-type MenuEntry = MenuItem | MenuSeparator;
+import type { CommandTarget, MenuEntry, MenuModel } from "../commandCatalog";
 
 interface MenuProps {
   label: string;
-  items: MenuEntry[];
+  entries: readonly MenuEntry[];
   isOpen: boolean;
   onToggle: () => void;
   onHover: () => void;
   anyOpen: boolean;
+  onSelect: (target: CommandTarget) => void;
 }
 
-function Menu({ label, items, isOpen, onToggle, onHover, anyOpen }: MenuProps) {
+function Menu({ label, entries, isOpen, onToggle, onHover, anyOpen, onSelect }: MenuProps) {
   return (
     <div className="relative">
       <button
@@ -38,21 +26,21 @@ function Menu({ label, items, isOpen, onToggle, onHover, anyOpen }: MenuProps) {
         {label}
       </button>
       {isOpen && (
-        <div className="menu-enter absolute top-full left-0 mt-0 flex flex-col bg-bg-secondary border border-border rounded-b shadow-lg z-50 py-1 min-w-[200px]">
-          {items.map((item, i) =>
-            item.separator ? (
-              <div key={i} className="h-px bg-border mx-2 my-1" />
+        <div className="menu-enter absolute top-full left-0 mt-0 flex flex-col bg-bg-secondary border border-border rounded-b shadow-lg z-50 py-1 min-w-[220px] max-h-[calc(100vh-3rem)] overflow-y-auto">
+          {entries.map((entry, i) =>
+            entry.kind === "separator" ? (
+              <div key={i} className="h-px bg-border mx-2 my-1 shrink-0" />
             ) : (
               <button
                 key={i}
-                onClick={() => {
-                  item.action();
-                }}
-                className="flex items-center justify-between px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors text-left"
+                onClick={() => onSelect(entry.target)}
+                title={entry.target.kind === "recent" ? entry.target.path : undefined}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors text-left shrink-0"
               >
-                <span>{item.label}</span>
-                {item.shortcut && (
-                  <span className="text-text-muted ml-6 text-[10px]">{item.shortcut}</span>
+                <span className="w-3 shrink-0 text-accent">{entry.checked ? "✓" : ""}</span>
+                <span className="flex-1 truncate">{entry.label}</span>
+                {entry.shortcut && (
+                  <span className="text-text-muted ml-6 text-[10px] shrink-0">{entry.shortcut}</span>
                 )}
               </button>
             )
@@ -63,34 +51,12 @@ function Menu({ label, items, isOpen, onToggle, onHover, anyOpen }: MenuProps) {
   );
 }
 
-export interface MenuActions {
-  onNew: () => void;
-  onCommandPalette: () => void;
-  onOpen: () => void;
-  onSave: () => void;
-  onSaveAs: () => void;
-  onExportHtml: () => void;
-  onCloseTab: () => void;
-  onToggleMode: () => void;
-  onToggleWrap: () => void;
-  onFontSizeUp: () => void;
-  onFontSizeDown: () => void;
-  onFontSizeReset: () => void;
-  onCopyHtml: () => void;
-  onCopyForAI: () => void;
-  onCleanPaste: () => void;
-  onToggleCheckbox: () => void;
-  onFormatTable: () => void;
-  onOpenRecent: (path: string) => void;
-  onClearRecent: () => void;
-  onCheckUpdates: () => void;
-  recentFiles: string[];
-  onToggleOutline: () => void; // RAWNAV
-  autoSave: boolean; // SLEEK
-  onToggleAutoSave: () => void; // SLEEK
+export interface MenuBarProps {
+  menus: readonly MenuModel[];
+  onSelect: (target: CommandTarget) => void;
 }
 
-export default function MenuBar({ actions }: { actions: MenuActions }) {
+export default function MenuBar({ menus, onSelect }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -122,97 +88,25 @@ export default function MenuBar({ actions }: { actions: MenuActions }) {
     return () => window.removeEventListener("keydown", handler);
   }, [openMenu, close]);
 
-  const act = (fn: () => void) => {
-    close();
-    fn();
-  };
-
-  const recentEntries: MenuEntry[] = actions.recentFiles.length > 0
-    ? [
-        { separator: true },
-        ...actions.recentFiles.map((path) => ({
-          label: path.replace(/\\/g, "/").split("/").pop() ?? path,
-          shortcut: undefined,
-          action: () => act(() => actions.onOpenRecent(path)),
-          separator: false as const,
-        })),
-        { separator: true },
-        { label: "Clear Recent", action: () => act(actions.onClearRecent), separator: false as const },
-      ]
-    : [];
-
-  const fileItems: MenuEntry[] = [
-    { label: "New", shortcut: "Ctrl+N", action: () => act(actions.onNew) },
-    { label: "Open...", shortcut: "Ctrl+O", action: () => act(actions.onOpen) },
-    ...recentEntries,
-    { separator: true },
-    { label: "Save", shortcut: "Ctrl+S", action: () => act(actions.onSave) },
-    { label: "Save As...", shortcut: "Ctrl+Shift+S", action: () => act(actions.onSaveAs) },
-    { separator: true },
-    { label: "Export HTML...", action: () => act(actions.onExportHtml) },
-    { separator: true },
-    { label: "Close Tab", shortcut: "Ctrl+W", action: () => act(actions.onCloseTab) },
-  ];
-
-  const editItems: MenuEntry[] = [
-    { label: "Command Palette…", shortcut: "Ctrl+K", action: () => act(actions.onCommandPalette) },
-    { separator: true },
-    { label: "Toggle Mode", shortcut: "Ctrl+E", action: () => act(actions.onToggleMode) },
-    { label: "Toggle Word Wrap", shortcut: "Ctrl+Alt+W", action: () => act(actions.onToggleWrap) },
-    { label: "Toggle Outline", shortcut: "Ctrl+Shift+O", action: () => act(actions.onToggleOutline) }, // RAWNAV
-    { separator: true },
-    { label: "Copy as HTML", action: () => act(actions.onCopyHtml) },
-    { separator: true },
-    { label: "Copy for AI", shortcut: "Ctrl+Shift+A", action: () => act(actions.onCopyForAI) },
-    { label: "Clean AI Paste", action: () => act(actions.onCleanPaste) },
-    { label: "Toggle Checkbox", shortcut: "Ctrl+Shift+9", action: () => act(actions.onToggleCheckbox) },
-    { label: "Format Table", action: () => act(actions.onFormatTable) },
-    { separator: true },
-    { label: "Increase Font Size", shortcut: "Ctrl+=", action: () => act(actions.onFontSizeUp) },
-    { label: "Decrease Font Size", shortcut: "Ctrl+-", action: () => act(actions.onFontSizeDown) },
-    { label: "Reset Font Size", shortcut: "Ctrl+0", action: () => act(actions.onFontSizeReset) },
-    // --- SLEEK ---
-    ...(isTauri
-      ? [{ separator: true as const }, { label: `Auto-Save: ${actions.autoSave ? "On" : "Off"}`, action: () => act(actions.onToggleAutoSave) }]
-      : []),
-    // --- /SLEEK ---
-  ];
-
-  // "Check for Updates" only exists in the desktop app.
-  const helpItems: MenuEntry[] = [
-    { label: "Check for Updates…", action: () => act(actions.onCheckUpdates) },
-  ];
-
   const anyOpen = openMenu !== null;
 
   return (
     <div ref={barRef} className="flex items-center h-full">
-      <Menu
-        label="File"
-        items={fileItems}
-        isOpen={openMenu === "file"}
-        onToggle={() => setOpenMenu(openMenu === "file" ? null : "file")}
-        onHover={() => setOpenMenu("file")}
-        anyOpen={anyOpen}
-      />
-      <Menu
-        label="Edit"
-        items={editItems}
-        isOpen={openMenu === "edit"}
-        onToggle={() => setOpenMenu(openMenu === "edit" ? null : "edit")}
-        onHover={() => setOpenMenu("edit")}
-        anyOpen={anyOpen}
-      />
-      {isTauri && (
+      {menus.map((menu) => (
         <Menu
-          label="Help"
-          items={helpItems}
-          isOpen={openMenu === "help"}
-          onToggle={() => setOpenMenu(openMenu === "help" ? null : "help")}
-          onHover={() => setOpenMenu("help")}
+          key={menu.label}
+          label={menu.label}
+          entries={menu.entries}
+          isOpen={openMenu === menu.label}
+          onToggle={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
+          onHover={() => setOpenMenu(menu.label)}
           anyOpen={anyOpen}
+          onSelect={(target) => {
+            close();
+            onSelect(target);
+          }}
         />
-      )}
+      ))}
     </div>
   );
 }

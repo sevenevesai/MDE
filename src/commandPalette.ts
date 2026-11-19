@@ -4,6 +4,8 @@ export interface PaletteCommand {
   id: string;
   title: string;
   shortcut?: string;
+  /** Right-aligned note when there is no shortcut, e.g. "current" in a chooser. */
+  detail?: string;
   action: () => void;
 }
 
