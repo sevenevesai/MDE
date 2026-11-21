@@ -18,7 +18,8 @@ When an agent changes an open file, MDE reloads it, or shows you the diff first.
 [Open in browser](https://seveneves.ai/mde/app/) ·
 [Website](https://seveneves.ai/mde/) ·
 [For AI agents](#for-ai-agents) ·
-[Report a bug](https://github.com/sevenevesai/MDE/issues/new)
+[Report a bug](https://github.com/sevenevesai/MDE/issues/new) ·
+[Discord](https://seveneves.ai/discord/?from=mde-readme)
 
 </div>
 
@@ -338,6 +339,8 @@ scripts/             web deploy script
 Tests sit next to the code they cover, in `__tests__/` folders.
 
 ## Contributing
+
+Questions and feature requests: [Discord](https://seveneves.ai/discord/?from=mde-readme). Bugs: [open an issue](https://github.com/sevenevesai/MDE/issues/new).
 
 Report bugs and request features in [Issues](https://github.com/sevenevesai/MDE/issues). Pull
 requests to `main` run the CI checks above.
