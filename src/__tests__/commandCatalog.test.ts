@@ -47,10 +47,10 @@ describe("buildMenus", () => {
     expect(buildMenus(ctx({ tauri: false }), []).map((m) => m.label)).toEqual(["File", "Edit", "Selection", "View", "Help"]);
   });
 
-  it("offers updates on the desktop and the download page in the browser", () => {
+  it("offers updates (desktop) or the download page (browser), and Discord in both", () => {
     const help = (c: CommandContext) => ids(buildMenus(c, []).find((m) => m.label === "Help")?.entries ?? []);
-    expect(help(ctx())).toEqual(["help.updates"]);
-    expect(help(ctx({ tauri: false }))).toEqual(["help.download"]);
+    expect(help(ctx())).toEqual(["help.updates", "help.discord"]);
+    expect(help(ctx({ tauri: false }))).toEqual(["help.download", "help.discord"]);
   });
 
   it("hides markdown commands for other languages", () => {

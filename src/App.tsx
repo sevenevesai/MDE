@@ -53,6 +53,9 @@ import { shouldShowEmptyState } from "./emptyState";
 import { selectAutoSaveTargets } from "./autosave";
 // --- /SLEEK ---
 
+import DiscordNudge from "./components/DiscordNudge";
+import { DISCORD_APP_URL, openDiscord } from "./discordNudge";
+
 const DESKTOP_DOWNLOAD_URL = "https://seveneves.ai/mde/";
 
 /** Shown when a browser save had no file handle and fell back to a download. */
@@ -891,6 +894,7 @@ function App() {
     "view.prevTab": () => switchTab(-1),
     "help.updates": () => void checkForUpdates(showToast, { silent: false }),
     "help.download": () => { window.open(DESKTOP_DOWNLOAD_URL, "_blank", "noopener"); },
+    "help.discord": () => { openDiscord(DISCORD_APP_URL).catch(() => showToast("Could not open the Discord link.", "error")); },
   };
   const appCommandsRef = useRef(appCommands);
   appCommandsRef.current = appCommands;
@@ -1109,6 +1113,7 @@ function App() {
         onClose={handlePaletteClose}
         placeholder={palettePlaceholder}
       />
+      <DiscordNudge onError={(text) => showToast(text, "error")} />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

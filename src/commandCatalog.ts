@@ -70,7 +70,7 @@ export type AppCommandId =
   | "view.palette" | "view.language" | "view.toggleMode" | "view.outline" | "view.diffUnsaved"
   | "view.wordWrap" | "view.whitespace" | "view.indent2" | "view.indent4" | "view.indent8"
   | "view.indentTabs" | "view.fontUp" | "view.fontDown" | "view.fontReset" | "view.nextTab" | "view.prevTab"
-  | "help.updates" | "help.download";
+  | "help.updates" | "help.download" | "help.discord";
 
 export type CommandId = EditorCommandId | AppCommandId;
 
@@ -170,6 +170,7 @@ const COMMANDS: Readonly<Record<CommandId, CommandDef>> = {
 
   "help.updates": { label: "Check for Updates…", category: "Help", when: "tauri" },
   "help.download": { label: "Download the Desktop App…", category: "Help", when: "browser" },
+  "help.discord": { label: "Discord community", category: "Help" },
 };
 
 const RECENT = "recent";
@@ -217,7 +218,7 @@ const MENU_LAYOUT: readonly { readonly label: string; readonly slots: readonly S
       "view.fontUp", "view.fontDown", "view.fontReset",
     ],
   },
-  { label: "Help", slots: ["help.updates", "help.download"] },
+  { label: "Help", slots: ["help.updates", "help.download", "help.discord"] },
 ];
 
 export interface CommandContext {
