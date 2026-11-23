@@ -35,7 +35,6 @@ export default function EditorArea({
 
   const prevModeRef = useRef(mode);
   const prevTabIdRef = useRef(activeTabId);
-  const prevContentRef = useRef(initialContent);
 
   // --- SLEEK: mode-toggle crossfade. Bumped only when `modeChanged` below is
   // true (a rare user action, not per-keystroke) — a fresh key remounts the
@@ -69,20 +68,18 @@ export default function EditorArea({
   useEffect(() => {
     const prevMode = prevModeRef.current;
     const prevTab = prevTabIdRef.current;
-    const prevContent = prevContentRef.current;
     prevModeRef.current = mode;
     prevTabIdRef.current = activeTabId;
-    prevContentRef.current = initialContent;
 
     const cmMgr = editorManagerRef.current;
     const mdMgr = milkdownManagerRef.current;
 
     const modeChanged = prevMode !== mode && prevTab === activeTabId;
-    // Detect external content load (file opened into existing tab)
-    const contentLoadedExternally = prevTab === activeTabId && !modeChanged
-      && prevContent !== initialContent
-      && initialContent !== (cmMgr.getContent(activeTabId) ?? "");
 
+    // Never write `initialContent` into an existing editor here: it is the store's copy,
+    // which trails the editor by the content-sync debounce, so writing it back erases
+    // keystrokes typed since the sync. Loads into an open tab go through the managers
+    // directly (App's loadIntoTab).
     if (mode === "raw") {
       // Activate CodeMirror
       if (modeChanged) {
@@ -90,9 +87,6 @@ export default function EditorArea({
         // Uses getContentForRawSync to avoid false "modified" from normalization
         const markdown = mdMgr.getContentForRawSync(activeTabId) ?? initialContent;
         cmMgr.setContent(activeTabId, markdown);
-      } else if (contentLoadedExternally) {
-        // File was opened into this tab — sync CM with new content
-        cmMgr.setContent(activeTabId, initialContent);
       }
       cmMgr.activate(activeTabId, initialContent, languageId);
     } else {

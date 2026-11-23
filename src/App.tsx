@@ -222,8 +222,8 @@ function App() {
 
   /** Replace a tab's text with file text as its clean, saved state. */
   const loadIntoTab = useCallback((tabId: string, name: string, path: string, text: DiskText) => {
-    // Managers first, then dispatch, so EditorArea's external-load detection sees
-    // editors already in sync and does no extra work.
+    // The editors take new text only from these calls: EditorArea never copies the
+    // store's content into an existing editor (it trails CodeMirror's sync debounce).
     editorManagerRef.current.setContent(tabId, text.content);
     void milkdownManagerRef.current.setContent(tabId, text.content);
     dispatch({ type: "LOAD_FILE", tabId, name, path, text });
